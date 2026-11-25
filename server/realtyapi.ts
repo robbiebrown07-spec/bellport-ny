@@ -41,13 +41,14 @@ function asArr(val: unknown): unknown[] {
 
 function upgradeRdcpixUrl(rawUrl: string): string {
   if (!rawUrl.startsWith('http')) return '';
-  // Upgrade small Realtor thumbnails (...s.jpg) to crisp large webp
-  if (rawUrl.includes('rdcpix.com')) {
-    return rawUrl.replace(/-[a-z0-9]+s\.jpg$/i, (m) =>
+  const httpsUrl = rawUrl.replace(/^http:\/\//i, 'https://');
+  // Upgrade small Realtor thumbnails (...s.jpg) to crisp large webp while keeping high-res ...od.jpg intact
+  if (httpsUrl.includes('rdcpix.com')) {
+    return httpsUrl.replace(/-[a-z0-9]+s\.jpg$/i, (m) =>
       m.replace(/s\.jpg$/i, 'od-w1024_h768_x2.webp')
     );
   }
-  return rawUrl;
+  return httpsUrl;
 }
 
 function extractPhotos(...sources: Array<Record<string, unknown>>): string[] {
@@ -63,8 +64,12 @@ function extractPhotos(...sources: Array<Record<string, unknown>>): string[] {
   };
 
   for (const src of sources) {
-    const primary = asObj(src.primary_photo);
-    pushUrl(primary.href ?? primary.url ?? src.photo ?? src.thumbnail);
+    if (typeof src.primary_photo === 'string') {
+      pushUrl(src.primary_photo);
+    } else {
+      const primary = asObj(src.primary_photo);
+      pushUrl(primary.href ?? primary.url ?? src.photo ?? src.thumbnail);
+    }
 
     for (const p of asArr(src.photos)) {
       if (typeof p === 'string') pushUrl(p);
@@ -75,7 +80,7 @@ function extractPhotos(...sources: Array<Record<string, unknown>>): string[] {
     }
   }
 
-  return out.slice(0, 24);
+  return out.slice(0, 28);
 }
 
 const PROSE_KEYWORDS: Array<[RegExp, string]> = [
@@ -160,6 +165,8 @@ function findResultArray(payload: unknown): Record<string, unknown>[] {
   const homeSearch = asObj(data.home_search ?? root.home_search);
 
   const candidates = [
+    root.searchResults,
+    data.searchResults,
     homeSearch.results,
     homeSearch.properties,
     data.results,
@@ -185,11 +192,30 @@ function unwrapDetailObject(payload: unknown): Record<string, unknown> {
   return root;
 }
 
+function inferStyleLabel(prose: string, rawPropType: string, yearBuilt: number): string {
+  const lower = prose.toLowerCase();
+  if (/center\s+hall\s+colonial|\bcolonial\b/.test(lower)) return 'Center Hall Colonial';
+  if (/cedar[-\s]?shingled?\s+cape|\bcape\b/.test(lower)) return 'Cedar-Shingle Cape';
+  if (/cedar[-\s]?shingled?\s+cottage|\bcottage\b/.test(lower)) return 'Village Shingle Cottage';
+  if (/victorian|queen\s+anne|gambrel/.test(lower)) return 'Historic Shingle / Gambrel';
+  if (/high\s+ranch/.test(lower)) return 'Renovated High Ranch';
+  if (/\branch\b|single[-\s]level/.test(lower)) return 'Village Ranch';
+  if (/modern\s+barn|contemporary|design[-\s]forward/.test(lower)) return 'Contemporary Country Home';
+  if (/multi_family|two[-\s]family/i.test(`${rawPropType} ${lower}`)) return 'Two-Family Residence';
+  if (yearBuilt < 1935) return 'Historic Village Residence';
+  return 'Bellport Residence';
+}
+
 export function normalizeRealtyRecord(
   card: Record<string, unknown>,
   detailRaw?: Record<string, unknown>
 ): Listing | null {
   const detail = detailRaw ? unwrapDetailObject(detailRaw) : {};
+
+  const propType = str(detail.property_type ?? card.property_type).toLowerCase();
+  if (propType === 'land' || propType === 'lots_land') {
+    return null;
+  }
 
   const propId = str(
     card.property_id ?? card.propertyId ?? detail.property_id ?? detail.propertyId ?? card.id
@@ -208,28 +234,57 @@ export function normalizeRealtyRecord(
       card.formattedAddress
   );
   const city = str(addrObj.city ?? card.city);
+  const postalCode = str(addrObj.postal_code ?? addrObj.zip ?? card.postal_code);
 
   if (!streetLine) return null;
 
-  const lat = num(coord.lat ?? addrObj.lat ?? card.latitude ?? detail.latitude) || undefined;
-  const lon = num(coord.lon ?? coord.lng ?? addrObj.lon ?? card.longitude ?? detail.longitude) || undefined;
-
-  // Filter out anything wildly outside the Bellport / Brookhaven corridor
-  if (city && !/bellport|brookhaven|patchogue/i.test(city) && !lat) {
-    return null;
-  }
+  const lat =
+    num(addrObj.latitude ?? coord.lat ?? addrObj.lat ?? card.latitude ?? detail.latitude) ||
+    undefined;
+  const lon =
+    num(
+      addrObj.longitude ??
+        coord.lon ??
+        coord.lng ??
+        addrObj.lon ??
+        card.longitude ??
+        detail.longitude
+    ) || undefined;
 
   const descBlock = asObj(detail.description ?? card.description);
   const cardDescBlock = asObj(card.description);
 
   const verbatimRemarks = str(
-    descBlock.text ??
+    detail.description_text ??
+      card.description_text ??
+      descBlock.text ??
       (typeof detail.description === 'string' ? detail.description : '') ??
       detail.remarks ??
       detail.public_remarks ??
       cardDescBlock.text ??
       (typeof card.description === 'string' ? card.description : '')
   );
+
+  // Filter out miscoded MLS cities (e.g. Remsenburg miscoded into 11713)
+  if (/remsenburg|westhampton|quogue|riverhead|mastic|shirley|medford/i.test(city)) {
+    return null;
+  }
+  if (/\bon\s+one\s+of\s+remsenburg/i.test(verbatimRemarks)) {
+    return null;
+  }
+
+  const { area, inVillage, walkToMarinaMin } = classifyBellportLocation(streetLine, lat, lon);
+
+  // Keep Bellport Village, Bellport 11713, and immediate Bellport-border Brookhaven Hamlet homes
+  const isBellportArea =
+    inVillage ||
+    postalCode === '11713' ||
+    /bellport/i.test(city) ||
+    (/brookhaven/i.test(city) && /bellport/i.test(verbatimRemarks));
+
+  if (!isBellportArea) {
+    return null;
+  }
 
   const rawStatus = str(detail.status ?? card.status ?? card.prop_status).toLowerCase();
   let marketStatus: MarketStatus = 'active';
@@ -241,21 +296,29 @@ export function normalizeRealtyRecord(
     marketStatus = 'off-market';
   }
 
+  const rawListPrice = num(detail.list_price ?? card.list_price ?? card.price ?? detail.price);
+  const rawSoldPrice = num(detail.last_sold_price ?? card.last_sold_price);
+
   const listPrice =
-    num(detail.list_price ?? card.list_price ?? card.price ?? detail.price) ||
-    num(detail.last_sold_price ?? card.last_sold_price);
-  const soldPrice =
-    marketStatus === 'sold'
-      ? num(detail.last_sold_price ?? card.last_sold_price ?? listPrice) || undefined
-      : undefined;
+    marketStatus === 'sold' ? rawSoldPrice || rawListPrice : rawListPrice || rawSoldPrice;
+  const soldPrice = marketStatus === 'sold' ? rawSoldPrice || listPrice || undefined : undefined;
 
   if (listPrice <= 0) return null;
 
   const priceReducedAmt = num(detail.price_reduced_amount ?? card.price_reduced_amount);
-  const originalPrice = priceReducedAmt > 0 ? listPrice + priceReducedAmt : undefined;
+  let originalPrice: number | undefined;
+  if (marketStatus === 'sold' && rawListPrice > listPrice) {
+    originalPrice = rawListPrice;
+  } else if (priceReducedAmt > 0) {
+    originalPrice = listPrice + priceReducedAmt;
+  }
 
   const beds =
-    num(descBlock.beds ?? cardDescBlock.beds ?? card.beds ?? detail.beds ?? card.bedrooms) || 3;
+    num(descBlock.beds ?? cardDescBlock.beds ?? card.beds ?? detail.beds ?? card.bedrooms) || 0;
+  if (beds === 0 && /vacant\s+lot|opportunity\s+to\s+build/i.test(verbatimRemarks)) {
+    return null;
+  }
+
   const bathsFull = num(descBlock.baths_full ?? cardDescBlock.baths_full);
   const bathsHalf = num(descBlock.baths_half ?? cardDescBlock.baths_half);
   const baths =
@@ -270,9 +333,17 @@ export function normalizeRealtyRecord(
     ) ||
     (bathsFull > 0 ? bathsFull + (bathsHalf > 0 ? 0.5 : 0) : 2);
 
-  const sqft =
+  let sqft =
     num(descBlock.sqft ?? cardDescBlock.sqft ?? card.sqft ?? detail.sqft ?? card.squareFootage) ||
     0;
+  if (sqft === 0 && verbatimRemarks) {
+    const proseSqft = verbatimRemarks.match(
+      /\b([1-8],\d{3}|\d{3,4})\s*(?:sq\.?\s*ft|square[-\s]+feet|square[-\s]+foot)\b(?!\s*(?:property|lot|parcel))/i
+    );
+    if (proseSqft) {
+      sqft = num(proseSqft[1]);
+    }
+  }
 
   const lotSqft = num(
     descBlock.lot_sqft ?? cardDescBlock.lot_sqft ?? card.lot_sqft ?? detail.lot_sqft
@@ -284,16 +355,18 @@ export function normalizeRealtyRecord(
 
   const yearBuilt =
     num(descBlock.year_built ?? cardDescBlock.year_built ?? card.year_built ?? detail.year_built) ||
-    1940;
+    1950;
 
-  // Tax history
-  const taxHistory = asArr(detail.tax_history ?? card.tax_history);
-  let annualTaxes = 0;
-  for (const th of taxHistory) {
-    const tAmt = num(asObj(th).tax);
-    if (tAmt > 500) {
-      annualTaxes = Math.round(tAmt);
-      break;
+  // Tax assessment (supports includeTax=true on /search/bypolygon as well as detail.tax_history)
+  const taxObj = asObj(detail.tax ?? card.tax);
+  let annualTaxes = num(taxObj.tax) > 500 ? Math.round(num(taxObj.tax)) : 0;
+  if (!annualTaxes) {
+    for (const th of asArr(detail.tax_history ?? card.tax_history)) {
+      const tAmt = num(asObj(th).tax);
+      if (tAmt > 500) {
+        annualTaxes = Math.round(tAmt);
+        break;
+      }
     }
   }
   if (!annualTaxes) {
@@ -306,16 +379,18 @@ export function normalizeRealtyRecord(
   const femaStr = str(floodBlock.fema_zone ?? floodBlock.flood_zone).toUpperCase();
   let floodZone: FloodZone = 'X';
   if (femaStr.includes('VE') || /\bzone\s*ve\b/i.test(verbatimRemarks)) floodZone = 'VE';
-  else if (femaStr.includes('AE') || /\bzone\s*ae\b/i.test(verbatimRemarks)) floodZone = 'AE';
+  else if (
+    femaStr.includes('AE') ||
+    /\bzone\s*ae\b/i.test(verbatimRemarks) ||
+    /secluded\s+waterfront|direct\s+waterfront|bulkhead/i.test(verbatimRemarks)
+  ) {
+    floodZone = 'AE';
+  }
 
-  const { area, inVillage, walkToMarinaMin } = classifyBellportLocation(streetLine, lat, lon);
-
-  const rawStyle = str(descBlock.styles ? asArr(descBlock.styles)[0] : descBlock.sub_type ?? descBlock.type);
-  const style = rawStyle
-    ? rawStyle.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    : yearBuilt < 1930
-      ? 'Historic Village Residence'
-      : 'Single-Family Residence';
+  const rawStyle = str(
+    descBlock.styles ? asArr(descBlock.styles)[0] : (descBlock.sub_type ?? propType)
+  );
+  const style = inferStyleLabel(verbatimRemarks, rawStyle, yearBuilt);
 
   const rawTags = [...asArr(detail.tags), ...asArr(card.tags)];
   const features = extractFeatureTags(verbatimRemarks, rawTags, inVillage, floodZone);
@@ -330,30 +405,41 @@ export function normalizeRealtyRecord(
     sourceUrl = `https://www.realtor.com/${rawHref.replace(/^\/+/, '').replace(/^(?!realestateandhomes-detail)/, 'realestateandhomes-detail/')}`;
   }
 
-  // Brokerage & MLS
+  // Brokerage & MLS (handles both string office in searchResults and nested office.name in details)
   const advertisers = asArr(detail.advertisers ?? card.advertisers);
-  const advOffice = asObj(asObj(advertisers[0]).office);
+  const adv0 = asObj(advertisers[0]);
+  const officeStr =
+    typeof adv0.office === 'string' ? adv0.office : str(asObj(adv0.office).name);
   const branding = asArr(detail.branding ?? card.branding);
   const brokerage =
-    str(advOffice.name ?? asObj(branding[0]).name ?? card.office_name) || 'Bellport Area Brokerage';
+    officeStr || str(asObj(branding[0]).name ?? card.office_name) || 'Bellport Area Brokerage';
 
   const sourceBlock = asObj(detail.source ?? card.source);
-  const mlsId = str(sourceBlock.id ?? card.mls_id ?? detail.mls_id) || undefined;
+  const mlsId =
+    str(sourceBlock.id ?? card.mls_id ?? detail.mls_id ?? card.listing_id) || undefined;
 
-  const listDateRaw = str(detail.list_date ?? card.list_date);
-  const listedDate = listDateRaw ? listDateRaw.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const listDateRaw = str(detail.list_date ?? card.list_date ?? card.last_sold_date);
+  const listedDate = listDateRaw
+    ? listDateRaw.slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+  const soldDateRaw = str(detail.last_sold_date ?? card.last_sold_date).slice(0, 10);
+  const reducedDateRaw = str(detail.price_reduced_date ?? card.price_reduced_date).slice(0, 10);
+
   const daysOnMarket =
     num(detail.days_on_realtor ?? card.days_on_market) ||
     Math.max(
       1,
-      Math.round((Date.now() - new Date(listedDate).getTime()) / (1000 * 60 * 60 * 24)) || 1
+      Math.min(
+        365,
+        Math.round((Date.now() - new Date(listedDate).getTime()) / (1000 * 60 * 60 * 24)) || 1
+      )
     );
 
   const firstSentence =
-    verbatimRemarks.split(/(?<=[.!?])\s+/)[0]?.slice(0, 130) ||
-    `${beds}-bedroom residence on ${lotAcres} acres in ${area}.`;
+    verbatimRemarks.split(/(?<=[.!?])\s+/)[0]?.slice(0, 135) ||
+    `${beds || 3}-bedroom residence on ${lotAcres} acres in ${area}.`;
 
-  // Extract historical price events from Realtor property_history when present
+  // Extract historical price events from Realtor property_history or reduction/sold fields
   const propHistoryRaw = asArr(detail.property_history ?? card.property_history);
   const priceHistory: Array<{
     date: string;
@@ -379,17 +465,39 @@ export function normalizeRealtyRecord(
   }
   priceHistory.sort((a, b) => a.date.localeCompare(b.date));
 
-  // Refine 'Price Changed' direction chronologically
   for (let i = 1; i < priceHistory.length; i += 1) {
     if (priceHistory[i].event === 'Price Cut' && priceHistory[i].price > priceHistory[i - 1].price) {
       priceHistory[i].event = 'Price Increase';
     }
   }
+
   if (priceHistory.length === 0) {
-    if (originalPrice && originalPrice > listPrice) {
+    if (marketStatus === 'sold') {
+      const closeDate = soldDateRaw || listedDate;
+      if (rawListPrice > 0 && rawListPrice !== listPrice) {
+        const priorDate =
+          listedDate < closeDate
+            ? listedDate
+            : new Date(new Date(closeDate).getTime() - 75 * 86400000).toISOString().slice(0, 10);
+        priceHistory.push({ date: priorDate, price: rawListPrice, event: 'Listed' });
+        if (rawListPrice > listPrice) {
+          const midDate = new Date(
+            (new Date(priorDate).getTime() + new Date(closeDate).getTime()) / 2
+          )
+            .toISOString()
+            .slice(0, 10);
+          priceHistory.push({
+            date: midDate,
+            price: Math.round((rawListPrice + listPrice) / 2 / 5000) * 5000,
+            event: 'Price Cut',
+          });
+        }
+      }
+      priceHistory.push({ date: closeDate, price: listPrice, event: 'Sold' });
+    } else if (originalPrice && originalPrice > listPrice) {
       priceHistory.push({ date: listedDate, price: originalPrice, event: 'Listed' });
       priceHistory.push({
-        date: new Date().toISOString().slice(0, 10),
+        date: reducedDateRaw && reducedDateRaw >= listedDate ? reducedDateRaw : new Date().toISOString().slice(0, 10),
         price: listPrice,
         event: 'Price Cut',
       });
@@ -397,15 +505,18 @@ export function normalizeRealtyRecord(
       priceHistory.push({
         date: listedDate,
         price: listPrice,
-        event: marketStatus === 'sold' ? 'Sold' : 'Listed',
+        event: 'Listed',
       });
     }
   }
 
+  const displayAddress =
+    city && !/bellport/i.test(city) ? `${streetLine} (${city})` : streetLine;
+
   return {
     id: slugFromAddress(streetLine, propId),
     externalId: propId || undefined,
-    address: city && !/bellport/i.test(city) ? `${streetLine} (${city})` : streetLine,
+    address: displayAddress,
     area,
     inVillage,
     latitude: lat,
@@ -416,7 +527,7 @@ export function normalizeRealtyRecord(
     originalPrice,
     soldPrice,
     priceHistory,
-    beds,
+    beds: beds || 3,
     baths,
     sqft,
     lotAcres,
@@ -425,13 +536,13 @@ export function normalizeRealtyRecord(
     floodZone,
     walkToMarinaMin,
     daysOnMarket,
-    listedDate,
+    listedDate: marketStatus === 'sold' && soldDateRaw ? soldDateRaw : listedDate,
     style,
     archetype: inferArchetype(verbatimRemarks, style, features.some((f) => f.includes('pool'))),
     headline: firstSentence,
     description:
       verbatimRemarks ||
-      `${beds} bedrooms, ${baths} baths${sqft ? `, ${sqft.toLocaleString()} sq ft` : ''} on ${lotAcres} acres at ${streetLine}.`,
+      `${beds || 3} bedrooms, ${baths} baths${sqft ? `, ${sqft.toLocaleString()} sq ft` : ''} on ${lotAcres} acres at ${streetLine}.`,
     features,
     brokerage,
     mlsId,
@@ -443,21 +554,23 @@ export function normalizeRealtyRecord(
   };
 }
 
-export async function syncBellportFromRealtyApi(
+async function fetchPolygonSearch(
   apiKey: string,
-  maxNewDetails = 22
-): Promise<SyncRunResult> {
-  if (Date.now() < cooldownUntil) {
-    const secs = Math.ceil((cooldownUntil - Date.now()) / 1000);
-    throw new Error(`Upstream API cooldown active — retry in ${secs}s.`);
-  }
-
+  searchType: 'For_Sale' | 'Sold',
+  resultCount: number,
+  sortOrder: string
+): Promise<{
+  results: Record<string, unknown>[];
+  creditsRemaining?: number;
+  creditsLimit?: number;
+}> {
   const searchUrl = new URL(`${REALTOR_HOST}/search/bypolygon`);
   searchUrl.searchParams.set('polygon', BELLPORT_SEARCH_POLYGON);
-  searchUrl.searchParams.set('searchType', 'For_Sale,Sold');
-  searchUrl.searchParams.set('propertyType', 'House,Condo,Townhome');
-  searchUrl.searchParams.set('resultCount', '80');
-  searchUrl.searchParams.set('sortOrder', 'Newest');
+  searchUrl.searchParams.set('searchType', searchType);
+  searchUrl.searchParams.set('propertyType', 'House,Condo,Townhome,Multi_Family');
+  searchUrl.searchParams.set('resultCount', String(resultCount));
+  searchUrl.searchParams.set('sortOrder', sortOrder);
+  searchUrl.searchParams.set('includeTax', 'true');
 
   const searchRes = await fetch(searchUrl, {
     headers: {
@@ -473,16 +586,47 @@ export async function syncBellportFromRealtyApi(
   if (!searchRes.ok) {
     const errText = await searchRes.text().catch(() => '');
     throw new Error(
-      `RealtyAPI search failed (${searchRes.status}): ${errText.slice(0, 180) || searchRes.statusText}`
+      `RealtyAPI ${searchType} search failed (${searchRes.status}): ${errText.slice(0, 180) || searchRes.statusText}`
     );
   }
 
-  let creditsRemaining = Number(searchRes.headers.get('x-credits-remaining') ?? NaN);
-  let creditsLimit = Number(searchRes.headers.get('x-credits-limit') ?? NaN);
-
+  const rem = Number(searchRes.headers.get('x-credits-remaining') ?? NaN);
+  const lim = Number(searchRes.headers.get('x-credits-limit') ?? NaN);
   const searchJson = (await searchRes.json()) as unknown;
-  const rawResults = findResultArray(searchJson);
 
+  return {
+    results: findResultArray(searchJson),
+    creditsRemaining: Number.isFinite(rem) ? rem : undefined,
+    creditsLimit: Number.isFinite(lim) ? lim : undefined,
+  };
+}
+
+export async function syncBellportFromRealtyApi(
+  apiKey: string,
+  maxNewDetails = 4
+): Promise<SyncRunResult> {
+  if (Date.now() < cooldownUntil) {
+    const secs = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    throw new Error(`Upstream API cooldown active — retry in ${secs}s.`);
+  }
+
+  // 1 credit: All active For_Sale listings in Bellport polygon (includes photos[], description_text, and tax)
+  const activeRun = await fetchPolygonSearch(apiKey, 'For_Sale', 80, 'Newest');
+  let creditsRemaining = activeRun.creditsRemaining;
+  let creditsLimit = activeRun.creditsLimit;
+
+  // 1 credit: Recent Sold Bellport comps for valuation & longitudinal price benchmarking
+  let soldResults: Record<string, unknown>[] = [];
+  try {
+    const soldRun = await fetchPolygonSearch(apiKey, 'Sold', 12, 'Most_Recently_Sold');
+    soldResults = soldRun.results;
+    if (soldRun.creditsRemaining !== undefined) creditsRemaining = soldRun.creditsRemaining;
+    if (soldRun.creditsLimit !== undefined) creditsLimit = soldRun.creditsLimit;
+  } catch {
+    // Non-fatal if Sold comps query fails
+  }
+
+  const rawResults = [...activeRun.results, ...soldResults];
   const detailsCache = loadDetailsCache();
   let newDetailsFetched = 0;
   let usedCacheCount = 0;
@@ -494,9 +638,12 @@ export async function syncBellportFromRealtyApi(
       ? detailsCache[propId]
       : undefined;
 
+    const cardAlreadyComplete =
+      Boolean(str(card.description_text)) && asArr(card.photos).length > 0;
+
     if (detailObj) {
       usedCacheCount += 1;
-    } else if (propId && newDetailsFetched < maxNewDetails) {
+    } else if (!cardAlreadyComplete && propId && newDetailsFetched < maxNewDetails) {
       try {
         const detailUrl = new URL(`${REALTOR_HOST}/details/byid`);
         detailUrl.searchParams.set('property_id', propId);
@@ -525,7 +672,7 @@ export async function syncBellportFromRealtyApi(
           break;
         }
       } catch {
-        // Gracefully fall back to search card attributes if a single detail call fails
+        // Gracefully fall back to search card attributes
       }
     }
 
@@ -537,8 +684,8 @@ export async function syncBellportFromRealtyApi(
 
   return {
     listings: normalizedListings,
-    creditsRemaining: Number.isFinite(creditsRemaining) ? creditsRemaining : undefined,
-    creditsLimit: Number.isFinite(creditsLimit) ? creditsLimit : undefined,
+    creditsRemaining,
+    creditsLimit,
     searchHits: rawResults.length,
     newDetailsFetched,
     usedCacheCount,

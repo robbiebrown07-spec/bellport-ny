@@ -20,7 +20,7 @@ export const DEFAULT_STREET_ALERTS: StreetAlertRule[] = [
   {
     id: 'alert-bellport-ln',
     street: 'Bellport Lane',
-    maxPrice: 2750000,
+    maxPrice: null,
     minBeds: 3,
     mustHaveKeyword: '',
     notifyOnPriceDrop: true,
@@ -28,19 +28,19 @@ export const DEFAULT_STREET_ALERTS: StreetAlertRule[] = [
     createdAt: '2026-11-01',
   },
   {
-    id: 'alert-browns-ln',
-    street: 'Browns Lane',
+    id: 'alert-howells-pt',
+    street: 'Howells Point',
     maxPrice: null,
-    minBeds: 4,
+    minBeds: 3,
     mustHaveKeyword: '',
     notifyOnPriceDrop: true,
     enabled: true,
     createdAt: '2026-11-01',
   },
   {
-    id: 'alert-s-howells',
-    street: 'South Howells Point',
-    maxPrice: 2500000,
+    id: 'alert-country-club',
+    street: 'Country Club Road',
+    maxPrice: 2000000,
     minBeds: 3,
     mustHaveKeyword: 'pool',
     notifyOnPriceDrop: true,
@@ -72,10 +72,22 @@ function ensureDataDir(): void {
   }
 }
 
+const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json');
+
 export function readEnvLocalVar(name: string): string {
   const fromProcess = process.env[name];
   if (fromProcess && fromProcess.trim()) {
     return fromProcess.trim();
+  }
+  try {
+    if (fs.existsSync(SECRETS_FILE)) {
+      const secrets = JSON.parse(fs.readFileSync(SECRETS_FILE, 'utf-8')) as Record<string, string>;
+      if (typeof secrets[name] === 'string' && secrets[name].trim()) {
+        return secrets[name].trim();
+      }
+    }
+  } catch {
+    // Ignore secrets read error
   }
   try {
     if (fs.existsSync(ENV_LOCAL_FILE)) {
@@ -116,28 +128,18 @@ export function maskApiKey(key: string): string | undefined {
 }
 
 export function saveEnvLocalVar(varName: 'REALTYAPI_KEY' | 'GEMINI_API_KEY', value: string): void {
+  ensureDataDir();
   const clean = value.trim();
-  let lines: string[] = [];
-  if (fs.existsSync(ENV_LOCAL_FILE)) {
-    lines = fs.readFileSync(ENV_LOCAL_FILE, 'utf-8').split(/\r?\n/);
-  }
-  let updated = false;
-  const rx = new RegExp(`^\\s*${varName}\\s*=`);
-  const nextLines = lines.map((line) => {
-    if (rx.test(line)) {
-      updated = true;
-      return `${varName}=${clean}`;
+  let secrets: Record<string, string> = {};
+  if (fs.existsSync(SECRETS_FILE)) {
+    try {
+      secrets = JSON.parse(fs.readFileSync(SECRETS_FILE, 'utf-8')) as Record<string, string>;
+    } catch {
+      secrets = {};
     }
-    return line;
-  });
-  if (!updated) {
-    nextLines.push(`${varName}=${clean}`);
   }
-  fs.writeFileSync(
-    ENV_LOCAL_FILE,
-    `${nextLines.filter((l, i, arr) => i < arr.length - 1 || l !== '').join('\n')}\n`,
-    'utf-8'
-  );
+  secrets[varName] = clean;
+  fs.writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2), { encoding: 'utf-8', mode: 0o600 });
   process.env[varName] = clean;
 }
 

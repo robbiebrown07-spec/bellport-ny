@@ -29,6 +29,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
+    watch: {
+      ignored: ['**/.data/**'],
+    },
     headers: {
       'Cache-Control': 'no-cache',
     },

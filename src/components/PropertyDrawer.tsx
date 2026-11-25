@@ -272,7 +272,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Price / Sq Ft</div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
-                ${ppsf}/ft²
+                {ppsf > 0 ? `$${ppsf}/ft²` : '—'}
               </strong>
             </div>
             <div>
@@ -290,7 +290,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Interior Space</div>
               <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 16 }}>
-                {listing.sqft.toLocaleString()} sq ft
+                {listing.sqft > 0 ? `${listing.sqft.toLocaleString()} sq ft` : 'Undisclosed'}
               </strong>
             </div>
             <div>

@@ -1173,11 +1173,11 @@ export const App: React.FC = () => {
                                 <span>Beds/Baths</span>
                               </div>
                               <div>
-                                <strong>{item.sqft.toLocaleString()}</strong>
+                                <strong>{item.sqft > 0 ? item.sqft.toLocaleString() : '—'}</strong>
                                 <span>Sq Ft</span>
                               </div>
                               <div>
-                                <strong className="priv-val">${ppsf}</strong>
+                                <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
                                 <span>$/Sq Ft</span>
                               </div>
                               <div>
@@ -1285,9 +1285,11 @@ export const App: React.FC = () => {
                               <td className="num">
                                 {item.beds} / {item.baths}
                               </td>
-                              <td className="num">{item.sqft.toLocaleString()}</td>
+                              <td className="num">
+                                {item.sqft > 0 ? item.sqft.toLocaleString() : '—'}
+                              </td>
                               <td className="num priv-val">
-                                ${item.sqft > 0 ? Math.round(item.price / item.sqft) : 0}
+                                {item.sqft > 0 ? `$${Math.round(item.price / item.sqft)}` : '—'}
                               </td>
                               <td className="num">{item.lotAcres}</td>
                             </tr>

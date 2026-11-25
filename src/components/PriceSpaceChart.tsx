@@ -23,7 +23,8 @@ export const PriceSpaceChart: React.FC<PriceSpaceChartProps> = ({
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  if (listings.length < 2) {
+  const plotted = listings.filter((d) => d.sqft > 0);
+  if (plotted.length < 2) {
     return null;
   }
 
@@ -33,17 +34,17 @@ export const PriceSpaceChart: React.FC<PriceSpaceChartProps> = ({
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
 
-  const [minSqft, maxSqft] = extent(listings, (d) => d.sqft) as [number, number];
-  const [minPrice, maxPrice] = extent(listings, (d) => d.price) as [number, number];
-  const [minAcres, maxAcres] = extent(listings, (d) => d.lotAcres) as [number, number];
+  const [minSqft, maxSqft] = extent(plotted, (d) => d.sqft) as [number, number];
+  const [minPrice, maxPrice] = extent(plotted, (d) => d.price) as [number, number];
+  const [minAcres, maxAcres] = extent(plotted, (d) => d.lotAcres) as [number, number];
 
   const xScale = scaleLinear()
-    .domain([Math.max(800, minSqft * 0.9), maxSqft * 1.06])
+    .domain([Math.max(700, minSqft * 0.9), maxSqft * 1.06])
     .range([0, innerW])
     .nice();
 
   const yScale = scaleLinear()
-    .domain([Math.max(400000, minPrice * 0.85), maxPrice * 1.08])
+    .domain([Math.max(300000, minPrice * 0.85), maxPrice * 1.08])
     .range([innerH, 0])
     .nice();
 
@@ -53,7 +54,7 @@ export const PriceSpaceChart: React.FC<PriceSpaceChartProps> = ({
 
   const xTicks = xScale.ticks(6);
   const yTicks = yScale.ticks(5);
-  const hovered = listings.find((l) => l.id === hoveredId) ?? null;
+  const hovered = plotted.find((l) => l.id === hoveredId) ?? null;
 
   return (
     <section className="chart-band" aria-labelledby="chart-price-space-heading">
@@ -115,7 +116,7 @@ export const PriceSpaceChart: React.FC<PriceSpaceChartProps> = ({
               <line x1={0} x2={innerW} y1={innerH} y2={innerH} stroke="var(--line-strong)" />
 
               {/* Listing marks */}
-              {listings.map((item) => {
+              {plotted.map((item) => {
                 const cx = xScale(item.sqft);
                 const cy = yScale(item.price);
                 const r = rScale(item.lotAcres);
