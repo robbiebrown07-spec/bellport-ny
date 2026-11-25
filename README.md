@@ -4,7 +4,7 @@ Personal second-home tracker, polygon MLS sync, longitudinal price monitor, stre
 
 ## Key Capabilities
 - **Automated Polygon Sync (`Sync` modal / `/api/sync`)**:
-  - Queries `RealtyAPI.io`'s Realtor polygon endpoint around Bellport Village, deep-fetches **full photo galleries (`photos[]`)** and **verbatim written descriptions** once per new property ID, caches them locally in `.data/` so unchanged properties cost zero repeat credits, and verifies **Incorporated Village residency** via the official US Census TIGERweb boundary (`GEOID 3605771`).
+  - Queries `RealtyAPI.io`'s `/search/bypolygon` endpoint (`For_Sale` + `Sold` comps with `includeTax=true` — **only 2 credits per full sync**, allowing ~125 syncs/month on the free 250-credit tier), extracts **high-res `https://` MLS photo galleries (`photos[]`, up to 28 per home)**, **verbatim agent descriptions (`description_text`)**, and **annual taxes**, and verifies **Incorporated Village residency** via the official US Census TIGERweb boundary (`GEOID 3605771`).
 - **Boutique & Off-Market Clipper (`+ Add`)**:
   - Fetch boutique local broker URLs (e.g., `oldpurchase.com`), drag the **1-Click Browser Bookmarklet** (`+ Clip to Bellport Watch`), Smart-Paste raw text, or upload a Redfin CSV.
 - **Price Tracking Over Time (`Prices` view & Property Drawer)**:
