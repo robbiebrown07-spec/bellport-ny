@@ -242,7 +242,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const allListings = appState?.listings ?? [];
+  const allListings = useMemo(() => appState?.listings ?? [], [appState]);
 
   const tabCounts = useMemo(
     () => ({
@@ -1064,6 +1064,7 @@ export const App: React.FC = () => {
 
       {/* Deep-Linkable Slide-Over Detail Sheet */}
       <PropertyDrawer
+        key={selectedListing?.id ?? 'none'}
         listing={selectedListing}
         searchQuery={filters.q}
         hasPrev={selectedIndex > 0}

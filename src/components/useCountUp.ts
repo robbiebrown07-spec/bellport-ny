@@ -1,24 +1,14 @@
 import { useEffect, useState } from 'react';
 
 export function useCountUp(target: number, durationMs = 520): number {
-  const [value, setValue] = useState<number>(() => {
-    if (
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ) {
-      return target;
-    }
-    return 0;
-  });
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  const [value, setValue] = useState<number>(() => (prefersReduced ? target : 0));
 
   useEffect(() => {
-    if (
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ) {
-      setValue(target);
-      return;
-    }
+    if (prefersReduced) return;
 
     let rafId = 0;
     const startTime = performance.now();
@@ -40,7 +30,7 @@ export function useCountUp(target: number, durationMs = 520): number {
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, durationMs]);
+  }, [target, durationMs, prefersReduced]);
 
-  return value;
+  return prefersReduced ? target : value;
 }

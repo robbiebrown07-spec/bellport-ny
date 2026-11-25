@@ -38,11 +38,6 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    setConfirmDelete(false);
-    setNewTag('');
-  }, [listing?.id]);
-
-  useEffect(() => {
     if (!listing) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
