@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Award,
   Check,
+  Heart,
+  Home,
   LayoutGrid,
   List,
   RotateCcw,
@@ -17,10 +20,20 @@ import type {
   Listing,
   MarketStatus,
   PersistedAppState,
+  PrimaryView,
+  StreetAlertRule,
+  SyncMetadata,
   UserTrackStatus,
 } from './types';
-import { fetchSeedListings, loadInitialState, saveState } from './lib/storage';
+import { fetchSeedListings, loadBootstrap, saveState } from './lib/storage';
 import { filterAndSortListings } from './lib/search';
+import { parseListingSnippet } from './lib/parser';
+import {
+  evaluateAirbnbViability,
+  evaluateGoodDeal,
+  evaluateStreetAlerts,
+  getPriceChangeStats,
+} from './lib/intelligence';
 import { LoadingMark } from './components/AppMark';
 import { TopBar } from './components/TopBar';
 import { EditableText } from './components/EditableText';
@@ -29,11 +42,16 @@ import { HighlightedText } from './components/HighlightedText';
 import { PriceSpaceChart } from './components/PriceSpaceChart';
 import { PropertyDrawer } from './components/PropertyDrawer';
 import { AddListingModal } from './components/AddListingModal';
+import { SyncModal } from './components/SyncModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
+import { FavoritesAndTasteView } from './components/FavoritesAndTasteView';
+import { StreetAlertsView } from './components/StreetAlertsView';
+import { PriceDropsHistoryView } from './components/PriceDropsHistoryView';
 import { CornerDock } from './components/CornerDock';
 import { useCountUp } from './components/useCountUp';
 
 const DEFAULT_FILTERS: FilterState = {
+  view: 'listings',
   tab: 'all',
   q: '',
   minPrice: null,
@@ -45,6 +63,8 @@ const DEFAULT_FILTERS: FilterState = {
   area: 'all',
   villageOnly: false,
   zoneXOnly: false,
+  minDealScore: null,
+  airbnbEligibleOnly: false,
   marketStatus: 'all',
   sortBy: 'newest',
   layout: 'grid',
@@ -75,6 +95,30 @@ const STATUS_LABEL: Record<UserTrackStatus, string> = {
   unreviewed: 'Track',
 };
 
+function readInitialClipDraft(): Partial<Listing> | null {
+  if (typeof window === 'undefined') return null;
+  const sp = new URLSearchParams(window.location.search);
+  const rawClip = sp.get('clip');
+  if (!rawClip) return null;
+  try {
+    const parsed = JSON.parse(rawClip) as {
+      u?: string;
+      t?: string;
+      b?: string;
+      p?: string[];
+    };
+    const snippetDraft = parseListingSnippet(`${parsed.t ?? ''}\n${parsed.b ?? ''}`);
+    return {
+      ...snippetDraft,
+      sourceUrl: parsed.u ?? snippetDraft.sourceUrl,
+      photos: parsed.p ?? [],
+      photoUrl: parsed.p?.[0],
+    };
+  } catch {
+    return null;
+  }
+}
+
 function readFiltersFromUrl(): FilterState {
   if (typeof window === 'undefined') return DEFAULT_FILTERS;
   const sp = new URLSearchParams(window.location.search);
@@ -85,13 +129,30 @@ function readFiltersFromUrl(): FilterState {
     return Number.isFinite(n) ? n : null;
   };
 
+  const view = sp.get('view');
   const tab = sp.get('tab');
   const layout = sp.get('layout');
   const sortBy = sp.get('sort');
   const area = sp.get('area');
   const marketStatus = sp.get('status');
 
+  const validView: PrimaryView =
+    view === 'favorites' || view === 'alerts' || view === 'history' ? view : 'listings';
+
+  const validSorts: Array<FilterState['sortBy']> = [
+    'newest',
+    'deal-desc',
+    'rental-desc',
+    'price-cut',
+    'price-asc',
+    'price-desc',
+    'sqft-desc',
+    'ppsf-asc',
+    'acres-desc',
+  ];
+
   return {
+    view: validView,
     tab: tab === 'shortlist' || tab === 'comps' ? tab : 'all',
     q: sp.get('q') ?? '',
     minPrice: numOrNull('minPrice'),
@@ -103,15 +164,12 @@ function readFiltersFromUrl(): FilterState {
     area: (area as BellportMicroArea) || 'all',
     villageOnly: sp.get('village') === '1',
     zoneXOnly: sp.get('zoneX') === '1',
+    minDealScore: numOrNull('deal'),
+    airbnbEligibleOnly: sp.get('airbnb') === '1',
     marketStatus: (marketStatus as MarketStatus) || 'all',
-    sortBy:
-      sortBy === 'price-asc' ||
-      sortBy === 'price-desc' ||
-      sortBy === 'sqft-desc' ||
-      sortBy === 'ppsf-asc' ||
-      sortBy === 'acres-desc'
-        ? sortBy
-        : 'newest',
+    sortBy: validSorts.includes(sortBy as FilterState['sortBy'])
+      ? (sortBy as FilterState['sortBy'])
+      : 'newest',
     layout: layout === 'table' ? 'table' : 'grid',
   };
 }
@@ -127,18 +185,29 @@ function readHashListingId(): string | null {
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<PersistedAppState | null>(null);
+  const [syncMeta, setSyncMeta] = useState<SyncMetadata>({
+    apiConfigured: false,
+    cachedDetailsCount: 0,
+  });
   const [filters, setFilters] = useState<FilterState>(() => readFiltersFromUrl());
   const [selectedId, setSelectedId] = useState<string | null>(() => readHashListingId());
-  const [addOpen, setAddOpen] = useState(false);
+  const [clipDraft, setClipDraft] = useState<Partial<Listing> | null>(() =>
+    readInitialClipDraft()
+  );
+  const [addOpen, setAddOpen] = useState<boolean>(() => Boolean(readInitialClipDraft()));
+  const [syncOpen, setSyncOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Bootstrap state from IndexedDB / seed JSON
+  // Bootstrap from /api/bootstrap (with IndexedDB fallback)
   useEffect(() => {
     let active = true;
-    loadInitialState()
-      .then((loaded) => {
-        if (active) setAppState(loaded);
+    loadBootstrap()
+      .then((payload) => {
+        if (active) {
+          setAppState(payload.state);
+          setSyncMeta(payload.syncMeta);
+        }
       })
       .catch((err) => {
         console.error('Failed to bootstrap Bellport Watch:', err);
@@ -158,18 +227,19 @@ export const App: React.FC = () => {
     );
   }, [appState]);
 
-  // Debounced auto-save to IndexedDB + localStorage
+  // Debounced auto-save to server + IndexedDB
   useEffect(() => {
     if (!appState) return;
     const timer = window.setTimeout(() => {
       void saveState(appState);
-    }, 240);
+    }, 260);
     return () => window.clearTimeout(timer);
   }, [appState]);
 
   // Sync filters to URL search params
   useEffect(() => {
     const sp = new URLSearchParams();
+    if (filters.view !== 'listings') sp.set('view', filters.view);
     if (filters.tab !== 'all') sp.set('tab', filters.tab);
     if (filters.q) sp.set('q', filters.q);
     if (filters.minPrice !== null) sp.set('minPrice', String(filters.minPrice));
@@ -181,6 +251,8 @@ export const App: React.FC = () => {
     if (filters.area !== 'all') sp.set('area', filters.area);
     if (filters.villageOnly) sp.set('village', '1');
     if (filters.zoneXOnly) sp.set('zoneX', '1');
+    if (filters.minDealScore !== null) sp.set('deal', String(filters.minDealScore));
+    if (filters.airbnbEligibleOnly) sp.set('airbnb', '1');
     if (filters.marketStatus !== 'all') sp.set('status', filters.marketStatus);
     if (filters.sortBy !== 'newest') sp.set('sort', filters.sortBy);
     if (filters.layout !== 'grid') sp.set('layout', filters.layout);
@@ -218,51 +290,63 @@ export const App: React.FC = () => {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
+        setFilters((f) => ({ ...f, view: 'listings' }));
+        window.setTimeout(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        }, 20);
         return;
       }
 
-      if (!inEditable && !selectedId && !addOpen && !settingsOpen && e.key === '/') {
+      if (!inEditable && !selectedId && !addOpen && !syncOpen && !settingsOpen && e.key === '/') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        setFilters((f) => ({ ...f, view: 'listings' }));
+        window.setTimeout(() => searchInputRef.current?.focus(), 20);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, addOpen, settingsOpen]);
+  }, [selectedId, addOpen, syncOpen, settingsOpen]);
 
   const openListingDrawer = (id: string | null) => {
     setSelectedId(id);
     const qs = window.location.search;
     if (id) {
-      window.history.pushState(null, '', `${window.location.pathname}${qs}#item/${encodeURIComponent(id)}`);
+      window.history.pushState(
+        null,
+        '',
+        `${window.location.pathname}${qs}#item/${encodeURIComponent(id)}`
+      );
     } else {
       window.history.pushState(null, '', `${window.location.pathname}${qs}`);
     }
   };
 
   const allListings = useMemo(() => appState?.listings ?? [], [appState]);
-
-  const tabCounts = useMemo(
-    () => ({
-      all: allListings.length,
-      shortlist: allListings.filter(
-        (l) => l.userStatus === 'shortlist' || l.userStatus === 'watching'
-      ).length,
-      comps: allListings.filter(
-        (l) => l.marketStatus === 'sold' || l.marketStatus === 'contingent'
-      ).length,
-    }),
-    [allListings]
-  );
+  const streetAlerts = useMemo(() => appState?.streetAlerts ?? [], [appState]);
 
   const visibleListings = useMemo(
     () => filterAndSortListings(allListings, filters),
     [allListings, filters]
   );
 
-  // Summary metrics
+  const navCounts = useMemo(() => {
+    const alertTriggered = evaluateStreetAlerts(streetAlerts, allListings);
+    const uniqueAlertHitIds = new Set(
+      alertTriggered.flatMap((t) => t.matches.map((m) => m.listing.id))
+    );
+    const priceDrops = allListings.filter(
+      (l) => getPriceChangeStats(l).totalDropDollar > 0
+    ).length;
+
+    return {
+      listings: allListings.length,
+      favorites: allListings.filter((l) => l.isFavorite).length,
+      alertHits: uniqueAlertHitIds.size,
+      priceDrops,
+    };
+  }, [allListings, streetAlerts]);
+
   const medianPrice = useMemo(
     () => Math.round(median(visibleListings, (d) => d.price) ?? 0),
     [visibleListings]
@@ -298,6 +382,7 @@ export const App: React.FC = () => {
   const sampleCount = appState.listings.filter((l) => l.isSample).length;
 
   const hasActiveFilters =
+    filters.tab !== 'all' ||
     filters.q !== '' ||
     filters.minPrice !== null ||
     filters.maxPrice !== null ||
@@ -308,6 +393,8 @@ export const App: React.FC = () => {
     filters.area !== 'all' ||
     filters.villageOnly ||
     filters.zoneXOnly ||
+    filters.minDealScore !== null ||
+    filters.airbnbEligibleOnly ||
     filters.marketStatus !== 'all';
 
   const selectedIndex = selectedId
@@ -325,6 +412,18 @@ export const App: React.FC = () => {
         ...prev,
         listings: prev.listings.map((item) =>
           item.id === id ? { ...item, ...patch } : item
+        ),
+      };
+    });
+  };
+
+  const toggleFavorite = (id: string) => {
+    setAppState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        listings: prev.listings.map((item) =>
+          item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
         ),
       };
     });
@@ -357,6 +456,41 @@ export const App: React.FC = () => {
     });
   };
 
+  const addStreetAlert = (rule: StreetAlertRule) => {
+    setAppState((prev) =>
+      prev
+        ? {
+            ...prev,
+            streetAlerts: [rule, ...(prev.streetAlerts ?? [])],
+          }
+        : prev
+    );
+  };
+
+  const toggleStreetAlert = (id: string) => {
+    setAppState((prev) =>
+      prev
+        ? {
+            ...prev,
+            streetAlerts: (prev.streetAlerts ?? []).map((r) =>
+              r.id === id ? { ...r, enabled: !r.enabled } : r
+            ),
+          }
+        : prev
+    );
+  };
+
+  const deleteStreetAlert = (id: string) => {
+    setAppState((prev) =>
+      prev
+        ? {
+            ...prev,
+            streetAlerts: (prev.streetAlerts ?? []).filter((r) => r.id !== id),
+          }
+        : prev
+    );
+  };
+
   const handleSaveCopyOverride = (id: string, value: string | null) => {
     setAppState((prev) => {
       if (!prev) return prev;
@@ -385,17 +519,25 @@ export const App: React.FC = () => {
   return (
     <>
       <TopBar
-        activeTab={filters.tab}
-        counts={tabCounts}
+        activeView={filters.view}
+        counts={navCounts}
+        apiConfigured={syncMeta.apiConfigured}
         editMode={appState.preferences.editMode}
-        onSelectTab={(tab) => setFilters((f) => ({ ...f, tab }))}
-        onOpenAdd={() => setAddOpen(true)}
+        onSelectView={(view) => setFilters((f) => ({ ...f, view }))}
+        onOpenSync={() => setSyncOpen(true)}
+        onOpenAdd={() => {
+          setClipDraft(null);
+          setAddOpen(true);
+        }}
         onToggleEditMode={() =>
           setAppState((prev) =>
             prev
               ? {
                   ...prev,
-                  preferences: { ...prev.preferences, editMode: !prev.preferences.editMode },
+                  preferences: {
+                    ...prev.preferences,
+                    editMode: !prev.preferences.editMode,
+                  },
                 }
               : prev
           )
@@ -404,610 +546,778 @@ export const App: React.FC = () => {
       />
 
       <main>
-        {/* Editorial Header Band */}
-        <section className="hero-band">
-          <div className="container hero-band__grid">
-            <div>
-              <span className="eyebrow">Second-Home Search · 11713</span>
-              <h1 className="hero-band__title">
-                <EditableText
-                  id="hero-title"
-                  fallback="Tracking second-home candidates in Bellport Village."
-                  overrides={appState.copyOverrides}
-                  editMode={appState.preferences.editMode}
-                  onSave={handleSaveCopyOverride}
-                />
-              </h1>
-              <p className="hero-band__lede">
-                <EditableText
-                  id="hero-lede"
-                  fallback="Filter listings by price, bedrooms, interior space, and lot size—or search remarks for pools, guest cottages, Flood Zone X, and historic lanes south of Main Street."
-                  overrides={appState.copyOverrides}
-                  editMode={appState.preferences.editMode}
-                  onSave={handleSaveCopyOverride}
-                />
-              </p>
-            </div>
+        {filters.view === 'favorites' && (
+          <FavoritesAndTasteView
+            listings={allListings}
+            aiTasteMemo={appState.aiTasteMemo}
+            onOpenListing={(id) => openListingDrawer(id)}
+            onToggleFavorite={toggleFavorite}
+            onUpdateAiTasteMemo={(memo) =>
+              setAppState((prev) => (prev ? { ...prev, aiTasteMemo: memo } : prev))
+            }
+          />
+        )}
 
-            <div className="hero-band__kpis" aria-label="Filtered market summary">
-              <div className="kpi-item">
-                <div className="kpi-item__val">{animMatches}</div>
-                <div className="kpi-item__label">Matching listings</div>
-              </div>
-              <div className="kpi-item">
-                <div className="kpi-item__val priv-val">
-                  {medianPrice > 0 ? `$${(medianPrice / 1_000_000).toFixed(2)}M` : '—'}
+        {filters.view === 'alerts' && (
+          <StreetAlertsView
+            rules={streetAlerts}
+            listings={allListings}
+            onAddRule={addStreetAlert}
+            onToggleRule={toggleStreetAlert}
+            onDeleteRule={deleteStreetAlert}
+            onOpenListing={(id) => openListingDrawer(id)}
+          />
+        )}
+
+        {filters.view === 'history' && (
+          <PriceDropsHistoryView
+            listings={allListings}
+            privacyBlur={appState.preferences.privacyBlur}
+            onOpenListing={(id) => openListingDrawer(id)}
+          />
+        )}
+
+        {filters.view === 'listings' && (
+          <>
+            {/* Editorial Header Band */}
+            <section className="hero-band">
+              <div className="container hero-band__grid">
+                <div>
+                  <span className="eyebrow">Second-Home Search · 11713</span>
+                  <h1 className="hero-band__title">
+                    <EditableText
+                      id="hero-title"
+                      fallback="Tracking second-home candidates in Bellport Village."
+                      overrides={appState.copyOverrides}
+                      editMode={appState.preferences.editMode}
+                      onSave={handleSaveCopyOverride}
+                    />
+                  </h1>
+                  <p className="hero-band__lede">
+                    <EditableText
+                      id="hero-lede"
+                      fallback="Compare asking prices over time, deal scores, and Village Airbnb eligibility—or search remarks for pools, guest cottages, and historic lanes south of Main Street."
+                      overrides={appState.copyOverrides}
+                      editMode={appState.preferences.editMode}
+                      onSave={handleSaveCopyOverride}
+                    />
+                  </p>
                 </div>
-                <div className="kpi-item__label">Median asking price</div>
-              </div>
-              <div className="kpi-item">
-                <div className="kpi-item__val priv-val">
-                  {animPpsf > 0 ? `$${animPpsf}` : '—'}
-                </div>
-                <div className="kpi-item__label">Median price / sq ft</div>
-              </div>
-              <div className="kpi-item">
-                <div className="kpi-item__val">{animVillage}</div>
-                <div className="kpi-item__label">In Incorporated Village</div>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Filter & Keyword Search Band */}
-        <section className="filter-band" aria-label="Search and category filters">
-          <div className="container">
-            <div className="search-row">
-              <div className="search-box">
-                <Search size={18} className="search-box__icon" />
-                <input
-                  id="keyword-search-input"
-                  ref={searchInputRef}
-                  type="search"
-                  className="search-box__input"
-                  value={filters.q}
-                  onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                  placeholder='Keyword search: e.g. pool, "Bellport Lane", guest cottage, fireplace, ferry...'
-                  aria-label="Search listings by keyword"
-                />
-                {filters.q ? (
-                  <button
-                    type="button"
-                    className="search-box__clear"
-                    onClick={() => setFilters((f) => ({ ...f, q: '' }))}
-                    aria-label="Clear search query"
-                  >
-                    <X size={14} />
-                  </button>
-                ) : (
-                  <span className="search-box__kbd" aria-hidden="true">
-                    /
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Bellport Keyword Chips */}
-            <div className="keyword-chips" role="group" aria-label="Popular keyword searches">
-              <span className="keyword-chips__label">Quick keywords:</span>
-              {QUICK_KEYWORDS.map((kw) => {
-                const active = filters.q.trim().toLowerCase() === kw.toLowerCase();
-                return (
-                  <button
-                    key={kw}
-                    type="button"
-                    className={`kw-chip ${active ? 'is-active' : ''}`}
-                    onClick={() => toggleKeywordChip(kw)}
-                  >
-                    {kw}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Major Category Filters */}
-            <div className="filter-controls">
-              <div className="filter-field">
-                <label htmlFor="filter-price" className="filter-field__label">
-                  Price Bracket
-                </label>
-                <select
-                  id="filter-price"
-                  className="filter-field__select"
-                  value={pricePresetValue}
-                  onChange={(e) => {
-                    const [minStr, maxStr] = e.target.value.split('-');
-                    setFilters((f) => ({
-                      ...f,
-                      minPrice: minStr ? Number(minStr) : null,
-                      maxPrice: maxStr ? Number(maxStr) : null,
-                    }));
-                  }}
-                >
-                  <option value="-">Any Price</option>
-                  <option value="-1250000">Under $1.25M</option>
-                  <option value="-1750000">Under $1.75M</option>
-                  <option value="-2250000">Under $2.25M</option>
-                  <option value="-2750000">Under $2.75M</option>
-                  <option value="1500000-2500000">$1.5M – $2.5M</option>
-                  <option value="2500000-">$2.5M+</option>
-                </select>
-              </div>
-
-              <div className="filter-field">
-                <label htmlFor="filter-beds" className="filter-field__label">
-                  Bedrooms
-                </label>
-                <select
-                  id="filter-beds"
-                  className="filter-field__select"
-                  value={filters.minBeds ?? ''}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      minBeds: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                >
-                  <option value="">Any Beds</option>
-                  <option value="2">2+ Beds</option>
-                  <option value="3">3+ Beds</option>
-                  <option value="4">4+ Beds</option>
-                  <option value="5">5+ Beds</option>
-                </select>
-              </div>
-
-              <div className="filter-field">
-                <label htmlFor="filter-baths" className="filter-field__label">
-                  Bathrooms
-                </label>
-                <select
-                  id="filter-baths"
-                  className="filter-field__select"
-                  value={filters.minBaths ?? ''}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      minBaths: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                >
-                  <option value="">Any Baths</option>
-                  <option value="2">2+ Baths</option>
-                  <option value="3">3+ Baths</option>
-                  <option value="4">4+ Baths</option>
-                </select>
-              </div>
-
-              <div className="filter-field">
-                <label htmlFor="filter-sqft" className="filter-field__label">
-                  Interior Space
-                </label>
-                <select
-                  id="filter-sqft"
-                  className="filter-field__select"
-                  value={filters.minSqft ?? ''}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      minSqft: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                >
-                  <option value="">Any Sq Ft</option>
-                  <option value="1500">1,500+ sq ft</option>
-                  <option value="2200">2,200+ sq ft</option>
-                  <option value="2800">2,800+ sq ft</option>
-                  <option value="3400">3,400+ sq ft</option>
-                </select>
-              </div>
-
-              <div className="filter-field">
-                <label htmlFor="filter-acres" className="filter-field__label">
-                  Lot Space
-                </label>
-                <select
-                  id="filter-acres"
-                  className="filter-field__select"
-                  value={filters.minAcres ?? ''}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      minAcres: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                >
-                  <option value="">Any Lot Size</option>
-                  <option value="0.25">0.25+ acres</option>
-                  <option value="0.45">0.45+ acres (Pool-friendly)</option>
-                  <option value="0.7">0.70+ acres</option>
-                  <option value="1">1.00+ acres</option>
-                </select>
-              </div>
-
-              <div className="filter-field">
-                <label htmlFor="filter-area" className="filter-field__label">
-                  Micro-Area / Lane
-                </label>
-                <select
-                  id="filter-area"
-                  className="filter-field__select"
-                  value={filters.area}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      area: (e.target.value as BellportMicroArea) || 'all',
-                    }))
-                  }
-                >
-                  <option value="all">All Bellport Areas</option>
-                  <option value="Historic Lanes">Historic Lanes (South of Main)</option>
-                  <option value="Country Club & Golf">Country Club & Golf</option>
-                  <option value="Village Center">Village Center</option>
-                  <option value="East Lanes & Circuit">East Lanes & Circuit</option>
-                  <option value="Outside Village (11713)">Outside Village (11713)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Bellport-Specific Guardrail Toggles */}
-            <div className="filter-toggles">
-              <div className="filter-toggles__left">
-                <button
-                  id="toggle-village-only"
-                  type="button"
-                  className={`pill-toggle ${filters.villageOnly ? 'is-active' : ''}`}
-                  onClick={() => setFilters((f) => ({ ...f, villageOnly: !f.villageOnly }))}
-                  aria-pressed={filters.villageOnly}
-                >
-                  {filters.villageOnly ? <Check size={14} /> : <Waves size={14} />}
-                  <span>Inc. Village Only (Ho-Hum Ferry)</span>
-                </button>
-
-                <button
-                  id="toggle-zonex-only"
-                  type="button"
-                  className={`pill-toggle ${filters.zoneXOnly ? 'is-active' : ''}`}
-                  onClick={() => setFilters((f) => ({ ...f, zoneXOnly: !f.zoneXOnly }))}
-                  aria-pressed={filters.zoneXOnly}
-                >
-                  {filters.zoneXOnly ? <Check size={14} /> : <ShieldCheck size={14} />}
-                  <span>Flood Zone X Only</span>
-                </button>
-
-                <select
-                  id="filter-market-status"
-                  className="filter-field__select"
-                  style={{ height: 36, fontSize: 13 }}
-                  value={filters.marketStatus}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      marketStatus: (e.target.value as MarketStatus) || 'all',
-                    }))
-                  }
-                  aria-label="Filter by market status"
-                >
-                  <option value="all">All Market Statuses</option>
-                  <option value="active">Active On-Market</option>
-                  <option value="off-market">Off-Market / Whisper</option>
-                  <option value="contingent">Contingent / In Contract</option>
-                  <option value="sold">Sold Comps</option>
-                </select>
-              </div>
-
-              <div className="filter-toggles__right">
-                {hasActiveFilters && (
-                  <button
-                    id="btn-reset-filters"
-                    type="button"
-                    className="icon-btn"
-                    onClick={() =>
-                      setFilters((prev) => ({
-                        ...DEFAULT_FILTERS,
-                        tab: prev.tab,
-                        layout: prev.layout,
-                      }))
-                    }
-                  >
-                    <RotateCcw size={14} />
-                    <span>Reset filters</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Listings Results Band */}
-        <section className="results-band" aria-label="Matching Bellport properties">
-          <div className="container">
-            <div className="results-toolbar">
-              <p className="results-toolbar__summary">
-                Showing <strong>{visibleListings.length}</strong> of {allListings.length} tracked
-                properties
-                {filters.q ? (
-                  <>
-                    {' '}
-                    matching <strong>&ldquo;{filters.q}&rdquo;</strong>
-                  </>
-                ) : null}
-              </p>
-
-              <div className="results-toolbar__controls">
-                <select
-                  id="select-sort-by"
-                  className="filter-field__select"
-                  style={{ height: 38, fontSize: 13 }}
-                  value={filters.sortBy}
-                  onChange={(e) =>
-                    setFilters((f) => ({
-                      ...f,
-                      sortBy: e.target.value as FilterState['sortBy'],
-                    }))
-                  }
-                  aria-label="Sort listings"
-                >
-                  <option value="newest">Sort: Newest Listed</option>
-                  <option value="price-asc">Price: Low → High</option>
-                  <option value="price-desc">Price: High → Low</option>
-                  <option value="sqft-desc">Space: Largest Sq Ft</option>
-                  <option value="ppsf-asc">Value: Lowest $/Sq Ft</option>
-                  <option value="acres-desc">Lot: Largest Acreage</option>
-                </select>
-
-                <div className="segmented-tabs" role="group" aria-label="Layout toggle">
-                  <button
-                    type="button"
-                    className={`segmented-tabs__tab ${filters.layout === 'grid' ? 'is-active' : ''}`}
-                    onClick={() => setFilters((f) => ({ ...f, layout: 'grid' }))}
-                    aria-label="Card grid view"
-                    title="Editorial cards"
-                  >
-                    <LayoutGrid size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className={`segmented-tabs__tab ${filters.layout === 'table' ? 'is-active' : ''}`}
-                    onClick={() => setFilters((f) => ({ ...f, layout: 'table' }))}
-                    aria-label="Comparison table view"
-                    title="Compact comparison table"
-                  >
-                    <List size={15} />
-                  </button>
+                <div className="hero-band__kpis" aria-label="Filtered market summary">
+                  <div className="kpi-item">
+                    <div className="kpi-item__val">{animMatches}</div>
+                    <div className="kpi-item__label">Matching listings</div>
+                  </div>
+                  <div className="kpi-item">
+                    <div className="kpi-item__val priv-val">
+                      {medianPrice > 0 ? `$${(medianPrice / 1_000_000).toFixed(2)}M` : '—'}
+                    </div>
+                    <div className="kpi-item__label">Median asking price</div>
+                  </div>
+                  <div className="kpi-item">
+                    <div className="kpi-item__val priv-val">
+                      {animPpsf > 0 ? `$${animPpsf}` : '—'}
+                    </div>
+                    <div className="kpi-item__label">Median price / sq ft</div>
+                  </div>
+                  <div className="kpi-item">
+                    <div className="kpi-item__val">{animVillage}</div>
+                    <div className="kpi-item__label">In Incorporated Village</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </section>
 
-            {visibleListings.length === 0 ? (
-              <div className="empty-state">
-                <h2 style={{ fontSize: 22, marginBottom: 6 }}>
-                  No Bellport listings match those exact filters.
-                </h2>
-                <p style={{ color: 'var(--ink-2)', marginBottom: 16 }}>
-                  Try broadening the price ceiling, clearing a keyword chip, or adding a new
-                  property via Smart Paste.
-                </p>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() =>
-                    setFilters((prev) => ({
-                      ...DEFAULT_FILTERS,
-                      tab: prev.tab,
-                      layout: prev.layout,
-                    }))
-                  }
-                >
-                  <RotateCcw size={14} />
-                  <span>Clear all filters</span>
-                </button>
-              </div>
-            ) : filters.layout === 'grid' ? (
-              <div className="listing-grid">
-                {visibleListings.map((item) => {
-                  const ppsf = item.sqft > 0 ? Math.round(item.price / item.sqft) : 0;
-                  const priceDrop =
-                    item.originalPrice && item.originalPrice > item.price
-                      ? item.originalPrice - item.price
-                      : 0;
-
-                  return (
-                    <article key={item.id} className="listing-card">
-                      <div
-                        className="listing-card__media"
-                        onClick={() => openListingDrawer(item.id)}
+            {/* Filter & Keyword Search Band */}
+            <section className="filter-band" aria-label="Search and category filters">
+              <div className="container">
+                <div className="search-row">
+                  <div className="search-box">
+                    <Search size={18} className="search-box__icon" />
+                    <input
+                      id="keyword-search-input"
+                      ref={searchInputRef}
+                      type="search"
+                      className="search-box__input"
+                      value={filters.q}
+                      onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                      placeholder='Keyword search: e.g. pool, "Bellport Lane", guest cottage, fireplace, ferry...'
+                      aria-label="Search listings by keyword"
+                    />
+                    {filters.q ? (
+                      <button
+                        type="button"
+                        className="search-box__clear"
+                        onClick={() => setFilters((f) => ({ ...f, q: '' }))}
+                        aria-label="Clear search query"
                       >
-                        <PropertyIllustration
-                          archetype={item.archetype}
-                          address={item.address}
-                          styleName={item.style}
-                          photoUrl={item.photoUrl}
-                        />
-                        <div className="listing-card__badges">
-                          <span
-                            className={`badge ${
-                              item.marketStatus === 'off-market'
-                                ? 'badge--whisper'
-                                : item.inVillage
-                                  ? 'badge--village'
-                                  : 'badge--outside'
-                            }`}
-                          >
-                            {item.marketStatus === 'off-market'
-                              ? 'Off-Market Whisper'
-                              : item.marketStatus === 'sold'
-                                ? 'Sold Comp'
-                                : item.marketStatus === 'contingent'
-                                  ? 'In Contract'
-                                  : item.inVillage
-                                    ? 'Inc. Village ✓'
-                                    : 'Outside Village'}
-                          </span>
+                        <X size={14} />
+                      </button>
+                    ) : (
+                      <span className="search-box__kbd" aria-hidden="true">
+                        /
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                          <button
-                            type="button"
-                            className="status-dot-btn"
-                            title="Click to cycle shortlist status"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateListing(item.id, {
-                                userStatus: NEXT_STATUS[item.userStatus],
-                              });
-                            }}
-                          >
-                            <span className={`status-dot status-dot--${item.userStatus}`} />
-                            <span>{STATUS_LABEL[item.userStatus]}</span>
-                          </button>
-                        </div>
-                      </div>
+                {/* Quick Bellport Keyword Chips */}
+                <div className="keyword-chips" role="group" aria-label="Popular keyword searches">
+                  <span className="keyword-chips__label">Quick keywords:</span>
+                  {QUICK_KEYWORDS.map((kw) => {
+                    const active = filters.q.trim().toLowerCase() === kw.toLowerCase();
+                    return (
+                      <button
+                        key={kw}
+                        type="button"
+                        className={`kw-chip ${active ? 'is-active' : ''}`}
+                        onClick={() => toggleKeywordChip(kw)}
+                      >
+                        {kw}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                      <div className="listing-card__body">
-                        <div>
-                          <div className="listing-card__top">
-                            <div>
-                              <span className="listing-card__price priv-val">
-                                ${item.price.toLocaleString()}
-                              </span>
-                              {priceDrop > 0 && (
-                                <span className="listing-card__price-cut priv-val">
-                                  ↓ ${Math.round(priceDrop / 1000)}k
-                                </span>
-                              )}
-                            </div>
-                            <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-                              Zone {item.floodZone}
-                            </span>
-                          </div>
+                {/* Major Category Filters */}
+                <div className="filter-controls">
+                  <div className="filter-field">
+                    <label htmlFor="filter-price" className="filter-field__label">
+                      Price Bracket
+                    </label>
+                    <select
+                      id="filter-price"
+                      className="filter-field__select"
+                      value={pricePresetValue}
+                      onChange={(e) => {
+                        const [minStr, maxStr] = e.target.value.split('-');
+                        setFilters((f) => ({
+                          ...f,
+                          minPrice: minStr ? Number(minStr) : null,
+                          maxPrice: maxStr ? Number(maxStr) : null,
+                        }));
+                      }}
+                    >
+                      <option value="-">Any Price</option>
+                      <option value="-1250000">Under $1.25M</option>
+                      <option value="-1750000">Under $1.75M</option>
+                      <option value="-2250000">Under $2.25M</option>
+                      <option value="-2750000">Under $2.75M</option>
+                      <option value="1500000-2500000">$1.5M – $2.5M</option>
+                      <option value="2500000-">$2.5M+</option>
+                    </select>
+                  </div>
 
-                          <h3
-                            className="listing-card__address"
+                  <div className="filter-field">
+                    <label htmlFor="filter-beds" className="filter-field__label">
+                      Bedrooms
+                    </label>
+                    <select
+                      id="filter-beds"
+                      className="filter-field__select"
+                      value={filters.minBeds ?? ''}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          minBeds: e.target.value ? Number(e.target.value) : null,
+                        }))
+                      }
+                    >
+                      <option value="">Any Beds</option>
+                      <option value="2">2+ Beds</option>
+                      <option value="3">3+ Beds</option>
+                      <option value="4">4+ Beds</option>
+                      <option value="5">5+ Beds</option>
+                    </select>
+                  </div>
+
+                  <div className="filter-field">
+                    <label htmlFor="filter-baths" className="filter-field__label">
+                      Bathrooms
+                    </label>
+                    <select
+                      id="filter-baths"
+                      className="filter-field__select"
+                      value={filters.minBaths ?? ''}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          minBaths: e.target.value ? Number(e.target.value) : null,
+                        }))
+                      }
+                    >
+                      <option value="">Any Baths</option>
+                      <option value="2">2+ Baths</option>
+                      <option value="3">3+ Baths</option>
+                      <option value="4">4+ Baths</option>
+                    </select>
+                  </div>
+
+                  <div className="filter-field">
+                    <label htmlFor="filter-sqft" className="filter-field__label">
+                      Interior Space
+                    </label>
+                    <select
+                      id="filter-sqft"
+                      className="filter-field__select"
+                      value={filters.minSqft ?? ''}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          minSqft: e.target.value ? Number(e.target.value) : null,
+                        }))
+                      }
+                    >
+                      <option value="">Any Sq Ft</option>
+                      <option value="1500">1,500+ sq ft</option>
+                      <option value="2200">2,200+ sq ft</option>
+                      <option value="2800">2,800+ sq ft</option>
+                      <option value="3400">3,400+ sq ft</option>
+                    </select>
+                  </div>
+
+                  <div className="filter-field">
+                    <label htmlFor="filter-acres" className="filter-field__label">
+                      Lot Space
+                    </label>
+                    <select
+                      id="filter-acres"
+                      className="filter-field__select"
+                      value={filters.minAcres ?? ''}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          minAcres: e.target.value ? Number(e.target.value) : null,
+                        }))
+                      }
+                    >
+                      <option value="">Any Lot Size</option>
+                      <option value="0.25">0.25+ acres</option>
+                      <option value="0.45">0.45+ acres (Pool-friendly)</option>
+                      <option value="0.7">0.70+ acres</option>
+                      <option value="1">1.00+ acres</option>
+                    </select>
+                  </div>
+
+                  <div className="filter-field">
+                    <label htmlFor="filter-area" className="filter-field__label">
+                      Micro-Area / Lane
+                    </label>
+                    <select
+                      id="filter-area"
+                      className="filter-field__select"
+                      value={filters.area}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          area: (e.target.value as BellportMicroArea) || 'all',
+                        }))
+                      }
+                    >
+                      <option value="all">All Bellport Areas</option>
+                      <option value="Historic Lanes">Historic Lanes (South of Main)</option>
+                      <option value="Country Club & Golf">Country Club &amp; Golf</option>
+                      <option value="Village Center">Village Center</option>
+                      <option value="East Lanes & Circuit">East Lanes &amp; Circuit</option>
+                      <option value="Outside Village (11713)">Outside Village (11713)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Guardrail & Value/Airbnb Toggles */}
+                <div className="filter-toggles">
+                  <div className="filter-toggles__left">
+                    <button
+                      id="toggle-village-only"
+                      type="button"
+                      className={`pill-toggle ${filters.villageOnly ? 'is-active' : ''}`}
+                      onClick={() => setFilters((f) => ({ ...f, villageOnly: !f.villageOnly }))}
+                      aria-pressed={filters.villageOnly}
+                    >
+                      {filters.villageOnly ? <Check size={14} /> : <Waves size={14} />}
+                      <span>Inc. Village Only (Ho-Hum Ferry)</span>
+                    </button>
+
+                    <button
+                      id="toggle-zonex-only"
+                      type="button"
+                      className={`pill-toggle ${filters.zoneXOnly ? 'is-active' : ''}`}
+                      onClick={() => setFilters((f) => ({ ...f, zoneXOnly: !f.zoneXOnly }))}
+                      aria-pressed={filters.zoneXOnly}
+                    >
+                      {filters.zoneXOnly ? <Check size={14} /> : <ShieldCheck size={14} />}
+                      <span>Flood Zone X</span>
+                    </button>
+
+                    <button
+                      id="toggle-good-deals"
+                      type="button"
+                      className={`pill-toggle ${filters.minDealScore !== null ? 'is-active' : ''}`}
+                      onClick={() =>
+                        setFilters((f) => ({
+                          ...f,
+                          minDealScore: f.minDealScore === null ? 74 : null,
+                        }))
+                      }
+                      aria-pressed={filters.minDealScore !== null}
+                    >
+                      {filters.minDealScore !== null ? <Check size={14} /> : <Award size={14} />}
+                      <span>Strong Deals (74+)</span>
+                    </button>
+
+                    <button
+                      id="toggle-airbnb-legal"
+                      type="button"
+                      className={`pill-toggle ${filters.airbnbEligibleOnly ? 'is-active' : ''}`}
+                      onClick={() =>
+                        setFilters((f) => ({
+                          ...f,
+                          airbnbEligibleOnly: !f.airbnbEligibleOnly,
+                        }))
+                      }
+                      aria-pressed={filters.airbnbEligibleOnly}
+                    >
+                      {filters.airbnbEligibleOnly ? <Check size={14} /> : <Home size={14} />}
+                      <span>Airbnb / Short-Stay Legal</span>
+                    </button>
+
+                    <select
+                      id="filter-market-status"
+                      className="filter-field__select"
+                      style={{ height: 36, fontSize: 13 }}
+                      value={filters.marketStatus}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          marketStatus: (e.target.value as MarketStatus) || 'all',
+                        }))
+                      }
+                      aria-label="Filter by market status"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="active">Active On-Market</option>
+                      <option value="off-market">Off-Market / Whisper</option>
+                      <option value="contingent">In Contract</option>
+                      <option value="sold">Sold Comps</option>
+                    </select>
+                  </div>
+
+                  <div className="filter-toggles__right">
+                    {hasActiveFilters && (
+                      <button
+                        id="btn-reset-filters"
+                        type="button"
+                        className="icon-btn"
+                        onClick={() =>
+                          setFilters((prev) => ({
+                            ...DEFAULT_FILTERS,
+                            view: prev.view,
+                            layout: prev.layout,
+                          }))
+                        }
+                      >
+                        <RotateCcw size={14} />
+                        <span>Reset filters</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Listings Results Band */}
+            <section className="results-band" aria-label="Matching Bellport properties">
+              <div className="container">
+                <div className="results-toolbar">
+                  <p className="results-toolbar__summary">
+                    Showing <strong>{visibleListings.length}</strong> of {allListings.length}{' '}
+                    tracked properties
+                    {filters.q ? (
+                      <>
+                        {' '}
+                        matching <strong>&ldquo;{filters.q}&rdquo;</strong>
+                      </>
+                    ) : null}
+                  </p>
+
+                  <div className="results-toolbar__controls">
+                    <select
+                      id="select-sort-by"
+                      className="filter-field__select"
+                      style={{ height: 38, fontSize: 13 }}
+                      value={filters.sortBy}
+                      onChange={(e) =>
+                        setFilters((f) => ({
+                          ...f,
+                          sortBy: e.target.value as FilterState['sortBy'],
+                        }))
+                      }
+                      aria-label="Sort listings"
+                    >
+                      <option value="newest">Sort: Newest Listed</option>
+                      <option value="deal-desc">Deal Rating: Best Value First</option>
+                      <option value="rental-desc">Airbnb &amp; Summer Score</option>
+                      <option value="price-cut">Biggest Price Cuts</option>
+                      <option value="price-asc">Price: Low → High</option>
+                      <option value="price-desc">Price: High → Low</option>
+                      <option value="sqft-desc">Space: Largest Sq Ft</option>
+                      <option value="ppsf-asc">Value: Lowest $/Sq Ft</option>
+                      <option value="acres-desc">Lot: Largest Acreage</option>
+                    </select>
+
+                    <div className="segmented-tabs" role="group" aria-label="Layout toggle">
+                      <button
+                        type="button"
+                        className={`segmented-tabs__tab ${filters.layout === 'grid' ? 'is-active' : ''}`}
+                        onClick={() => setFilters((f) => ({ ...f, layout: 'grid' }))}
+                        aria-label="Card grid view"
+                        title="Editorial cards"
+                      >
+                        <LayoutGrid size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className={`segmented-tabs__tab ${filters.layout === 'table' ? 'is-active' : ''}`}
+                        onClick={() => setFilters((f) => ({ ...f, layout: 'table' }))}
+                        aria-label="Comparison table view"
+                        title="Compact comparison table"
+                      >
+                        <List size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {visibleListings.length === 0 ? (
+                  <div className="empty-state">
+                    <h2 style={{ fontSize: 22, marginBottom: 6 }}>
+                      No Bellport listings match those exact filters.
+                    </h2>
+                    <p style={{ color: 'var(--ink-2)', marginBottom: 16 }}>
+                      Try broadening the price ceiling, clearing a keyword chip, or syncing live
+                      listings.
+                    </p>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() =>
+                        setFilters((prev) => ({
+                          ...DEFAULT_FILTERS,
+                          view: prev.view,
+                          layout: prev.layout,
+                        }))
+                      }
+                    >
+                      <RotateCcw size={14} />
+                      <span>Clear all filters</span>
+                    </button>
+                  </div>
+                ) : filters.layout === 'grid' ? (
+                  <div className="listing-grid">
+                    {visibleListings.map((item) => {
+                      const ppsf = item.sqft > 0 ? Math.round(item.price / item.sqft) : 0;
+                      const priceStats = getPriceChangeStats(item);
+                      const deal = evaluateGoodDeal(item, allListings);
+                      const airbnb = evaluateAirbnbViability(item);
+                      const photoCount = item.photos?.length ?? (item.photoUrl ? 1 : 0);
+
+                      return (
+                        <article key={item.id} className="listing-card">
+                          <div
+                            className="listing-card__media"
                             onClick={() => openListingDrawer(item.id)}
                           >
-                            <HighlightedText text={item.address} query={filters.q} />
-                          </h3>
-                          <div className="listing-card__sub">
-                            <span>{item.area}</span>
-                            <span>·</span>
-                            <span>{item.style}</span>
-                          </div>
-                        </div>
+                            <PropertyIllustration
+                              archetype={item.archetype}
+                              address={item.address}
+                              styleName={item.style}
+                              photoUrl={item.photos?.[0] ?? item.photoUrl}
+                            />
+                            <div className="listing-card__badges">
+                              <span
+                                className={`badge ${
+                                  item.marketStatus === 'off-market'
+                                    ? 'badge--whisper'
+                                    : item.inVillage
+                                      ? 'badge--village'
+                                      : 'badge--outside'
+                                }`}
+                              >
+                                {item.marketStatus === 'off-market'
+                                  ? 'Off-Market Whisper'
+                                  : item.marketStatus === 'sold'
+                                    ? 'Sold Comp'
+                                    : item.marketStatus === 'contingent'
+                                      ? 'In Contract'
+                                      : item.inVillage
+                                        ? 'Inc. Village ✓'
+                                        : 'Outside Village'}
+                              </span>
 
-                        <div className="listing-card__specs">
-                          <div>
-                            <strong>
-                              {item.beds} / {item.baths}
-                            </strong>
-                            <span>Beds/Baths</span>
-                          </div>
-                          <div>
-                            <strong>{item.sqft.toLocaleString()}</strong>
-                            <span>Sq Ft</span>
-                          </div>
-                          <div>
-                            <strong className="priv-val">${ppsf}</strong>
-                            <span>$/Sq Ft</span>
-                          </div>
-                          <div>
-                            <strong>{item.lotAcres}</strong>
-                            <span>Acres</span>
-                          </div>
-                        </div>
+                              <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto' }}>
+                                <button
+                                  type="button"
+                                  className="status-dot-btn"
+                                  title="Save to Favorites (feeds Architectural Taste Profile)"
+                                  aria-label={`Favorite ${item.address}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFavorite(item.id);
+                                  }}
+                                  style={{ padding: '5px 8px' }}
+                                >
+                                  <Heart
+                                    size={14}
+                                    fill={item.isFavorite ? 'var(--g-red)' : 'none'}
+                                    color={item.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                                  />
+                                </button>
 
-                        <p className="listing-card__headline">
-                          <HighlightedText text={item.headline} query={filters.q} />
-                        </p>
+                                <button
+                                  type="button"
+                                  className="status-dot-btn"
+                                  title="Click to cycle shortlist status"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateListing(item.id, {
+                                      userStatus: NEXT_STATUS[item.userStatus],
+                                    });
+                                  }}
+                                >
+                                  <span className={`status-dot status-dot--${item.userStatus}`} />
+                                  <span>{STATUS_LABEL[item.userStatus]}</span>
+                                </button>
+                              </div>
+                            </div>
 
-                        <div className="listing-card__tags">
-                          {item.features.slice(0, 4).map((tag) => (
-                            <span key={tag} className="tag-pill">
-                              <HighlightedText text={tag} query={filters.q} />
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                            {photoCount > 1 && (
+                              <span
+                                className="badge"
+                                style={{
+                                  position: 'absolute',
+                                  left: 12,
+                                  bottom: 10,
+                                  fontSize: 11,
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                {photoCount} photos
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="listing-card__body">
+                            <div>
+                              <div className="listing-card__top">
+                                <div>
+                                  <span className="listing-card__price priv-val">
+                                    ${item.price.toLocaleString()}
+                                  </span>
+                                  {priceStats.totalDropDollar > 0 && (
+                                    <span className="listing-card__price-cut priv-val">
+                                      ↓ ${Math.round(priceStats.totalDropDollar / 1000)}k
+                                    </span>
+                                  )}
+                                </div>
+                                <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                                  Zone {item.floodZone}
+                                </span>
+                              </div>
+
+                              <h3
+                                className="listing-card__address"
+                                onClick={() => openListingDrawer(item.id)}
+                              >
+                                <HighlightedText text={item.address} query={filters.q} />
+                              </h3>
+                              <div className="listing-card__sub">
+                                <span>{item.area}</span>
+                                <span>·</span>
+                                <span>{item.style}</span>
+                              </div>
+                            </div>
+
+                            {/* Deal & Airbnb Rating Pills */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <span
+                                className={`badge ${
+                                  deal.tone === 'green'
+                                    ? 'badge--village'
+                                    : deal.tone === 'red'
+                                      ? 'badge--outside'
+                                      : ''
+                                }`}
+                                title={`Model benchmark: $${deal.estimatedFairPrice.toLocaleString()}`}
+                              >
+                                Deal {deal.score} · {deal.tier}
+                              </span>
+
+                              <span
+                                className={`badge ${
+                                  airbnb.airbnbShortStayLegal ? '' : 'badge--outside'
+                                } priv-val`}
+                                title={airbnb.notes[0]}
+                              >
+                                {airbnb.airbnbShortStayLegal
+                                  ? `Airbnb ${airbnb.score} · ~$${Math.round(airbnb.estAugustGross / 1000)}k Aug`
+                                  : '30d Min Law'}
+                              </span>
+                            </div>
+
+                            <div className="listing-card__specs">
+                              <div>
+                                <strong>
+                                  {item.beds} / {item.baths}
+                                </strong>
+                                <span>Beds/Baths</span>
+                              </div>
+                              <div>
+                                <strong>{item.sqft.toLocaleString()}</strong>
+                                <span>Sq Ft</span>
+                              </div>
+                              <div>
+                                <strong className="priv-val">${ppsf}</strong>
+                                <span>$/Sq Ft</span>
+                              </div>
+                              <div>
+                                <strong>{item.lotAcres}</strong>
+                                <span>Acres</span>
+                              </div>
+                            </div>
+
+                            <p className="listing-card__headline">
+                              <HighlightedText text={item.headline} query={filters.q} />
+                            </p>
+
+                            <div className="listing-card__tags">
+                              {item.features.slice(0, 4).map((tag) => (
+                                <span key={tag} className="tag-pill">
+                                  <HighlightedText text={tag} query={filters.q} />
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="listings-table">
+                      <thead>
+                        <tr>
+                          <th>Save</th>
+                          <th>Address &amp; Lane</th>
+                          <th>Price &amp; Cuts</th>
+                          <th>Deal Rating</th>
+                          <th>Airbnb / Summer</th>
+                          <th>Beds/Baths</th>
+                          <th>Sq Ft</th>
+                          <th>$/Sq Ft</th>
+                          <th>Acres</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleListings.map((item) => {
+                          const deal = evaluateGoodDeal(item, allListings);
+                          const airbnb = evaluateAirbnbViability(item);
+                          const pStats = getPriceChangeStats(item);
+
+                          return (
+                            <tr key={item.id} onClick={() => openListingDrawer(item.id)}>
+                              <td
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(item.id);
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="status-dot-btn"
+                                  aria-label={`Favorite ${item.address}`}
+                                >
+                                  <Heart
+                                    size={14}
+                                    fill={item.isFavorite ? 'var(--g-red)' : 'none'}
+                                    color={item.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                                  />
+                                </button>
+                              </td>
+                              <td>
+                                <strong style={{ display: 'block' }}>
+                                  <HighlightedText text={item.address} query={filters.q} />
+                                </strong>
+                                <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                                  {item.area} · {item.inVillage ? 'Inc. Village ✓' : 'Outside'}
+                                </span>
+                              </td>
+                              <td className="num priv-val">
+                                <strong>${item.price.toLocaleString()}</strong>
+                                {pStats.totalDropDollar > 0 && (
+                                  <div style={{ fontSize: 11, color: 'var(--g-green-600)' }}>
+                                    ↓ ${Math.round(pStats.totalDropDollar / 1000)}k (-
+                                    {pStats.totalDropPct}%)
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <span
+                                  className={`badge ${
+                                    deal.tone === 'green' ? 'badge--village' : ''
+                                  }`}
+                                >
+                                  {deal.score} · {deal.tier}
+                                </span>
+                              </td>
+                              <td className="priv-val">
+                                {airbnb.airbnbShortStayLegal ? (
+                                  <span>
+                                    {airbnb.score}/100 (~${Math.round(airbnb.estAugustGross / 1000)}k
+                                    Aug)
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--g-red-600)', fontSize: 12 }}>
+                                    30-Night Min Law
+                                  </span>
+                                )}
+                              </td>
+                              <td className="num">
+                                {item.beds} / {item.baths}
+                              </td>
+                              <td className="num">{item.sqft.toLocaleString()}</td>
+                              <td className="num priv-val">
+                                ${item.sqft > 0 ? Math.round(item.price / item.sqft) : 0}
+                              </td>
+                              <td className="num">{item.lotAcres}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="table-wrap">
-                <table className="listings-table">
-                  <thead>
-                    <tr>
-                      <th>Track</th>
-                      <th>Address & Lane</th>
-                      <th>Village</th>
-                      <th>Price</th>
-                      <th>Beds / Baths</th>
-                      <th>Sq Ft</th>
-                      <th>$/Sq Ft</th>
-                      <th>Acres</th>
-                      <th>Taxes</th>
-                      <th>Flood</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleListings.map((item) => (
-                      <tr key={item.id} onClick={() => openListingDrawer(item.id)}>
-                        <td
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateListing(item.id, {
-                              userStatus: NEXT_STATUS[item.userStatus],
-                            });
-                          }}
-                        >
-                          <button type="button" className="status-dot-btn">
-                            <span className={`status-dot status-dot--${item.userStatus}`} />
-                            <span>{STATUS_LABEL[item.userStatus]}</span>
-                          </button>
-                        </td>
-                        <td>
-                          <strong style={{ display: 'block' }}>
-                            <HighlightedText text={item.address} query={filters.q} />
-                          </strong>
-                          <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                            {item.area} · {item.marketStatus}
-                          </span>
-                        </td>
-                        <td>{item.inVillage ? 'Inc. ✓' : 'Outside'}</td>
-                        <td className="num priv-val">${item.price.toLocaleString()}</td>
-                        <td className="num">
-                          {item.beds} / {item.baths}
-                        </td>
-                        <td className="num">{item.sqft.toLocaleString()}</td>
-                        <td className="num priv-val">
-                          ${item.sqft > 0 ? Math.round(item.price / item.sqft) : 0}
-                        </td>
-                        <td className="num">{item.lotAcres}</td>
-                        <td className="num priv-val">${item.annualTaxes.toLocaleString()}</td>
-                        <td className="num">{item.floodZone}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
+            </section>
 
-        {/* D3 Price vs. Space Valuation Scatterplot */}
-        <PriceSpaceChart
-          listings={visibleListings}
-          privacyBlur={appState.preferences.privacyBlur}
-          onSelectListing={(id) => openListingDrawer(id)}
-        />
+            {/* D3 Price vs. Space Valuation Scatterplot */}
+            <PriceSpaceChart
+              listings={visibleListings}
+              privacyBlur={appState.preferences.privacyBlur}
+              onSelectListing={(id) => openListingDrawer(id)}
+            />
+          </>
+        )}
       </main>
 
-      {/* Subtle Bottom-Left Sample Data Pill (auto-hides once sample items are cleared) */}
+      {/* Subtle Bottom-Left Sample Data Pill (auto-hides once real synced data replaces seed) */}
       {hasSampleData && (
         <div className="sample-pill" role="status">
           <Sparkles size={13} color="var(--accent)" />
           <span>Sample data ({sampleCount})</span>
           <button
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setSyncOpen(true)}
             style={{
               border: 'none',
               background: 'transparent',
@@ -1017,7 +1327,7 @@ export const App: React.FC = () => {
               fontSize: 12,
             }}
           >
-            Manage
+            Connect Live Sync
           </button>
         </div>
       )}
@@ -1028,8 +1338,11 @@ export const App: React.FC = () => {
         privacyBlur={appState.preferences.privacyBlur}
         scratchpad={appState.scratchpad}
         onFocusSearch={() => {
-          searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          searchInputRef.current?.focus();
+          setFilters((f) => ({ ...f, view: 'listings' }));
+          window.setTimeout(() => {
+            searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            searchInputRef.current?.focus();
+          }, 30);
         }}
         onTogglePrivacy={() =>
           setAppState((prev) =>
@@ -1066,6 +1379,8 @@ export const App: React.FC = () => {
       <PropertyDrawer
         key={selectedListing?.id ?? 'none'}
         listing={selectedListing}
+        allListings={allListings}
+        privacyBlur={appState.preferences.privacyBlur}
         searchQuery={filters.q}
         hasPrev={selectedIndex > 0}
         hasNext={selectedIndex >= 0 && selectedIndex < visibleListings.length - 1}
@@ -1084,11 +1399,28 @@ export const App: React.FC = () => {
         onDeleteListing={deleteListing}
       />
 
-      {/* Add / Smart Paste / CSV Import Modal */}
+      {/* Add / URL Clipper / Bookmarklet / CSV Modal */}
       <AddListingModal
+        key={clipDraft ? `clip-${clipDraft.sourceUrl ?? 'draft'}` : 'manual'}
         open={addOpen}
-        onClose={() => setAddOpen(false)}
+        initialClipDraft={clipDraft}
+        onClose={() => {
+          setAddOpen(false);
+          setClipDraft(null);
+        }}
         onAddListings={addListings}
+      />
+
+      {/* Live RealtyAPI Polygon Sync Modal */}
+      <SyncModal
+        open={syncOpen}
+        syncMeta={syncMeta}
+        onClose={() => setSyncOpen(false)}
+        onSyncMetaChange={(meta) => setSyncMeta(meta)}
+        onSyncComplete={(nextState, meta) => {
+          setAppState(nextState);
+          setSyncMeta(meta);
+        }}
       />
 
       {/* Settings & Data Ownership Drawer */}

@@ -1,4 +1,9 @@
 import type { FilterState, Listing } from '../types';
+import {
+  evaluateAirbnbViability,
+  evaluateGoodDeal,
+  getPriceChangeStats,
+} from './intelligence';
 
 const SYNONYMS: Record<string, string[]> = {
   ferry: ['ferry', 'ho-hum', 'marina'],
@@ -8,6 +13,7 @@ const SYNONYMS: Record<string, string[]> = {
   golf: ['golf', 'country club'],
   porch: ['porch', 'screened', 'sunroom'],
   whisper: ['off-market', 'whisper', 'quietly'],
+  airbnb: ['incorporated village', 'pool', 'guest', 'walk to marina'],
 };
 
 export function parseSearchTokens(query: string): string[] {
@@ -51,14 +57,21 @@ export function matchesQuery(listing: Listing, query: string): boolean {
 }
 
 export function filterAndSortListings(listings: Listing[], filters: FilterState): Listing[] {
+  const dealMap = new Map<string, number>();
+  const rentalMap = new Map<string, ReturnType<typeof evaluateAirbnbViability>>();
+
+  for (const item of listings) {
+    dealMap.set(item.id, evaluateGoodDeal(item, listings).score);
+    rentalMap.set(item.id, evaluateAirbnbViability(item));
+  }
+
   const filtered = listings.filter((item) => {
-    // Segmented TopBar tab
     if (filters.tab === 'shortlist') {
-      if (item.userStatus !== 'shortlist' && item.userStatus !== 'watching') return false;
+      if (item.userStatus !== 'shortlist' && item.userStatus !== 'watching' && !item.isFavorite) {
+        return false;
+      }
     } else if (filters.tab === 'comps') {
       if (item.marketStatus !== 'sold' && item.marketStatus !== 'contingent') return false;
-    } else {
-      // 'all' tab shows active, off-market, contingent, and sold unless marketStatus narrows it
     }
 
     if (filters.marketStatus !== 'all' && item.marketStatus !== filters.marketStatus) {
@@ -71,6 +84,12 @@ export function filterAndSortListings(listings: Listing[], filters: FilterState)
       return false;
     }
     if (filters.zoneXOnly && item.floodZone !== 'X') {
+      return false;
+    }
+    if (filters.minDealScore !== null && (dealMap.get(item.id) ?? 0) < filters.minDealScore) {
+      return false;
+    }
+    if (filters.airbnbEligibleOnly && !rentalMap.get(item.id)?.airbnbShortStayLegal) {
       return false;
     }
     if (filters.minPrice !== null && item.price < filters.minPrice) {
@@ -100,6 +119,12 @@ export function filterAndSortListings(listings: Listing[], filters: FilterState)
   const sorted = [...filtered];
   sorted.sort((a, b) => {
     switch (filters.sortBy) {
+      case 'deal-desc':
+        return (dealMap.get(b.id) ?? 0) - (dealMap.get(a.id) ?? 0);
+      case 'rental-desc':
+        return (rentalMap.get(b.id)?.score ?? 0) - (rentalMap.get(a.id)?.score ?? 0);
+      case 'price-cut':
+        return getPriceChangeStats(b).totalDropDollar - getPriceChangeStats(a).totalDropDollar;
       case 'price-asc':
         return a.price - b.price;
       case 'price-desc':

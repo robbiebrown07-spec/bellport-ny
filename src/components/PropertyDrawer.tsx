@@ -1,11 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink, Plus, Trash2, X } from 'lucide-react';
-import type { Listing, UserTrackStatus } from '../types';
-import { PropertyIllustration } from './PropertyIllustration';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Heart,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
+import type { Listing, PricePoint, UserTrackStatus } from '../types';
+import { evaluateAirbnbViability, evaluateGoodDeal } from '../lib/intelligence';
+import { PhotoGallery } from './PhotoGallery';
+import { PriceHistoryChart } from './PriceHistoryChart';
 import { HighlightedText } from './HighlightedText';
 
 interface PropertyDrawerProps {
   listing: Listing | null;
+  allListings: Listing[];
+  privacyBlur: boolean;
   searchQuery: string;
   hasPrev: boolean;
   hasNext: boolean;
@@ -23,8 +35,24 @@ const STATUS_OPTIONS: Array<{ value: UserTrackStatus; label: string }> = [
   { value: 'pass', label: 'Pass' },
 ];
 
+const TONE_BG: Record<'green' | 'blue' | 'yellow' | 'red', string> = {
+  green: 'var(--g-green-50)',
+  blue: 'var(--g-blue-50)',
+  yellow: 'var(--g-yellow-50)',
+  red: 'var(--g-red-50)',
+};
+
+const TONE_INK: Record<'green' | 'blue' | 'yellow' | 'red', string> = {
+  green: 'var(--g-green-600)',
+  blue: 'var(--g-blue-700)',
+  yellow: 'var(--grey-900)',
+  red: 'var(--g-red-600)',
+};
+
 export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   listing,
+  allListings,
+  privacyBlur,
   searchQuery,
   hasPrev,
   hasNext,
@@ -66,6 +94,8 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   if (!listing) return null;
 
   const ppsf = listing.sqft > 0 ? Math.round(listing.price / listing.sqft) : 0;
+  const deal = evaluateGoodDeal(listing, allListings);
+  const airbnb = evaluateAirbnbViability(listing);
 
   const handleAddTag = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +110,18 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   const handleRemoveTag = (tag: string) => {
     onUpdateListing(listing.id, {
       features: listing.features.filter((f) => f !== tag),
+    });
+  };
+
+  const handleAddPricePoint = (point: PricePoint, newCurrentPrice: number) => {
+    const existing = listing.priceHistory ?? [
+      { date: listing.listedDate, price: listing.originalPrice ?? listing.price, event: 'Listed' },
+    ];
+    const nextHistory = [...existing, point].sort((a, b) => a.date.localeCompare(b.date));
+    onUpdateListing(listing.id, {
+      price: newCurrentPrice,
+      originalPrice: listing.originalPrice ?? listing.price,
+      priceHistory: nextHistory,
     });
   };
 
@@ -118,38 +160,45 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             >
               <ChevronRight size={16} />
             </button>
-            <span style={{ fontSize: 12, color: 'var(--ink-muted)', marginLeft: 4 }}>
-              Use ← / → or Esc
-            </span>
           </div>
 
-          <button
-            id="btn-close-drawer"
-            type="button"
-            className="icon-btn"
-            onClick={onClose}
-            aria-label="Close property details"
-          >
-            <X size={16} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className={`icon-btn ${listing.isFavorite ? 'is-active' : ''}`}
+              onClick={() =>
+                onUpdateListing(listing.id, { isFavorite: !listing.isFavorite })
+              }
+              aria-pressed={Boolean(listing.isFavorite)}
+            >
+              <Heart
+                size={15}
+                fill={listing.isFavorite ? 'var(--g-red)' : 'none'}
+                color={listing.isFavorite ? 'var(--g-red)' : 'currentColor'}
+              />
+              <span>{listing.isFavorite ? 'Favorited' : 'Favorite'}</span>
+            </button>
+
+            <button
+              id="btn-close-drawer"
+              type="button"
+              className="icon-btn"
+              onClick={onClose}
+              aria-label="Close property details"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="drawer__body">
-          <div
-            style={{
-              borderRadius: 'var(--radius-sm)',
-              overflow: 'hidden',
-              border: '1px solid var(--line)',
-              aspectRatio: '16 / 9',
-            }}
-          >
-            <PropertyIllustration
-              archetype={listing.archetype}
-              address={listing.address}
-              styleName={listing.style}
-              photoUrl={listing.photoUrl}
-            />
-          </div>
+          <PhotoGallery
+            photos={listing.photos}
+            photoUrl={listing.photoUrl}
+            archetype={listing.archetype}
+            address={listing.address}
+            styleName={listing.style}
+          />
 
           <div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -252,9 +301,110 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             </div>
           </div>
 
-          {/* Description with live keyword highlight */}
+          {/* Good Deal & Airbnb Viability Assessment Cards */}
+          <div className="form-grid">
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--line)',
+                background: 'var(--surface-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>
+                  DEAL RATING
+                </span>
+                <span
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: TONE_BG[deal.tone],
+                    color: TONE_INK[deal.tone],
+                  }}
+                >
+                  {deal.score}/100 · {deal.tier}
+                </span>
+              </div>
+              <div style={{ fontSize: 13 }} className="priv-val">
+                Model comp benchmark:{' '}
+                <strong style={{ fontFamily: 'var(--font-mono)' }}>
+                  ${deal.estimatedFairPrice.toLocaleString()}
+                </strong>{' '}
+                ({deal.deltaPct > 0 ? `+${deal.deltaPct}% above` : `${deal.deltaPct}% below`} comp
+                norm)
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {deal.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--line)',
+                background: 'var(--surface-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>
+                  AIRBNB & RENTAL
+                </span>
+                <span
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: TONE_BG[airbnb.tone],
+                    color: TONE_INK[airbnb.tone],
+                  }}
+                >
+                  {airbnb.score}/100 · {airbnb.legalBadge}
+                </span>
+              </div>
+              <div style={{ fontSize: 13 }} className="priv-val">
+                {airbnb.airbnbShortStayLegal ? (
+                  <>
+                    Peak ~<strong>${airbnb.estNightlyPeak}/nt</strong> · August ~
+                    <strong>${airbnb.estAugustGross.toLocaleString()}</strong> (
+                    {airbnb.taxOffsetPct}% of annual taxes)
+                  </>
+                ) : (
+                  <>
+                    30-day summer lease ~<strong>${airbnb.estAugustGross.toLocaleString()}/mo</strong>
+                  </>
+                )}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {airbnb.notes.slice(0, 3).map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Longitudinal Price History Chart */}
+          <PriceHistoryChart
+            listing={listing}
+            privacyBlur={privacyBlur}
+            onAddPricePoint={handleAddPricePoint}
+          />
+
+          {/* Verbatim Description with live keyword highlight */}
           <div>
-            <h3 style={{ fontSize: 16, marginBottom: 6 }}>Property Overview</h3>
+            <h3 style={{ fontSize: 16, marginBottom: 6 }}>Property Description</h3>
             <p style={{ color: 'var(--ink-2)', fontSize: 15, lineHeight: 1.6 }}>
               <HighlightedText text={listing.description} query={searchQuery} />
             </p>
@@ -292,7 +442,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               <input
                 type="text"
                 className="input"
-                placeholder="Add custom keyword (e.g., quiet lane, morning sun)..."
+                placeholder="Add custom keyword (e.g., morning sun, quiet lane)..."
                 value={newTag}
                 onChange={(e) => setNewTag(e.target.value)}
                 style={{ flex: 1 }}

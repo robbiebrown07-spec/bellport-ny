@@ -1,4 +1,9 @@
-import { SCHEMA_VERSION, type Listing, type PersistedAppState } from '../types';
+import {
+  SCHEMA_VERSION,
+  type Listing,
+  type PersistedAppState,
+  type SyncMetadata,
+} from '../types';
 
 const DB_NAME = 'bellport-watch-db';
 const STORE_NAME = 'app-state';
@@ -49,7 +54,7 @@ async function writeIdb(state: PersistedAppState): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch {
-    // Fallback handled by localStorage mirror below
+    // Fallback handled by localStorage mirror
   }
 }
 
@@ -61,10 +66,33 @@ export async function fetchSeedListings(): Promise<Listing[]> {
   return (await res.json()) as Listing[];
 }
 
-export async function loadInitialState(): Promise<PersistedAppState> {
+export interface BootstrapPayload {
+  state: PersistedAppState;
+  syncMeta: SyncMetadata;
+}
+
+/**
+ * Single-round-trip bootstrap from /api/bootstrap with graceful fallback
+ * to local IndexedDB / static seed JSON if offline or hosted statically.
+ */
+export async function loadBootstrap(): Promise<BootstrapPayload> {
+  try {
+    const res = await fetch('/api/bootstrap', { cache: 'no-store' });
+    if (res.ok) {
+      const payload = (await res.json()) as BootstrapPayload;
+      await writeIdb(payload.state);
+      return payload;
+    }
+  } catch {
+    // Fall through to local IndexedDB fallback
+  }
+
   const fromIdb = await readIdb();
   if (fromIdb && fromIdb.schemaVersion === SCHEMA_VERSION && Array.isArray(fromIdb.listings)) {
-    return fromIdb;
+    return {
+      state: fromIdb,
+      syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
+    };
   }
 
   try {
@@ -72,7 +100,10 @@ export async function loadInitialState(): Promise<PersistedAppState> {
     if (raw) {
       const parsed = JSON.parse(raw) as PersistedAppState;
       if (parsed.schemaVersion === SCHEMA_VERSION && Array.isArray(parsed.listings)) {
-        return parsed;
+        return {
+          state: parsed,
+          syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
+        };
       }
     }
   } catch {
@@ -99,7 +130,10 @@ export async function loadInitialState(): Promise<PersistedAppState> {
   };
 
   await saveState(initial);
-  return initial;
+  return {
+    state: initial,
+    syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
+  };
 }
 
 export async function saveState(state: PersistedAppState): Promise<void> {
@@ -111,9 +145,71 @@ export async function saveState(state: PersistedAppState): Promise<void> {
   try {
     localStorage.setItem(LS_FALLBACK_KEY, JSON.stringify(stamped));
   } catch {
-    // Quota or private mode
+    // Ignore quota error
   }
   await writeIdb(stamped);
+  try {
+    await fetch('/api/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(stamped),
+    });
+  } catch {
+    // Offline or static-only mode; local IndexedDB still holds latest state
+  }
+}
+
+export async function saveRealtyApiKey(apiKey: string): Promise<SyncMetadata> {
+  const res = await fetch('/api/config/key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey }),
+  });
+  const data = (await res.json()) as { syncMeta?: SyncMetadata; error?: string };
+  if (!res.ok || !data.syncMeta) {
+    throw new Error(data.error ?? 'Failed to save API key.');
+  }
+  return data.syncMeta;
+}
+
+export async function triggerServerSync(): Promise<{
+  state: PersistedAppState;
+  syncMeta: SyncMetadata;
+  summary: string;
+}> {
+  const res = await fetch('/api/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxNewDetails: 22 }),
+  });
+  const data = (await res.json()) as {
+    state?: PersistedAppState;
+    syncMeta?: SyncMetadata;
+    summary?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.state || !data.syncMeta) {
+    throw new Error(data.error ?? 'Bellport sync failed.');
+  }
+  await writeIdb(data.state);
+  return {
+    state: data.state,
+    syncMeta: data.syncMeta,
+    summary: data.summary ?? 'Sync complete.',
+  };
+}
+
+export async function clipListingByUrl(url: string): Promise<Partial<Listing>> {
+  const res = await fetch('/api/clip-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  const data = (await res.json()) as { draft?: Partial<Listing>; error?: string };
+  if (!res.ok || !data.draft) {
+    throw new Error(data.error ?? 'Could not fetch listing URL.');
+  }
+  return data.draft;
 }
 
 export function exportStateAsJson(state: PersistedAppState): void {
@@ -146,6 +242,7 @@ export function exportListingsAsCsv(listings: Listing[]): void {
     'style',
     'features',
     'brokerage',
+    'photoCount',
     'personalNotes',
     'sourceUrl',
   ];
@@ -177,6 +274,7 @@ export function exportListingsAsCsv(listings: Listing[]): void {
     l.style,
     l.features.join('; '),
     l.brokerage,
+    l.photos?.length ?? (l.photoUrl ? 1 : 0),
     l.personalNotes,
     l.sourceUrl ?? '',
   ]);

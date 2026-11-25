@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local server database & API detail cache (never commit personal data)
+.data
+
 # Environment secrets (never commit real .env files)
 .env*
 !.env.example

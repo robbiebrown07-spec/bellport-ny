@@ -1,22 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { Edit3, Plus, Settings } from 'lucide-react';
+import { Edit3, Plus, RefreshCw, Settings } from 'lucide-react';
+import type { PrimaryView } from '../types';
 import { AppMark } from './AppMark';
 
 interface TopBarProps {
-  activeTab: 'all' | 'shortlist' | 'comps';
-  counts: { all: number; shortlist: number; comps: number };
+  activeView: PrimaryView;
+  counts: {
+    listings: number;
+    favorites: number;
+    alertHits: number;
+    priceDrops: number;
+  };
+  apiConfigured: boolean;
   editMode: boolean;
-  onSelectTab: (tab: 'all' | 'shortlist' | 'comps') => void;
+  onSelectView: (view: PrimaryView) => void;
+  onOpenSync: () => void;
   onOpenAdd: () => void;
   onToggleEditMode: () => void;
   onOpenSettings: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
-  activeTab,
+  activeView,
   counts,
+  apiConfigured,
   editMode,
-  onSelectTab,
+  onSelectView,
+  onOpenSync,
   onOpenAdd,
   onToggleEditMode,
   onOpenSettings,
@@ -45,48 +55,79 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         <div className="topbar__right">
-          <div className="segmented-tabs" role="tablist" aria-label="Listing views">
+          <div className="segmented-tabs" role="tablist" aria-label="Primary views">
             <button
-              id="tab-all"
+              id="view-listings"
               type="button"
               role="tab"
-              aria-selected={activeTab === 'all'}
-              className={`segmented-tabs__tab ${activeTab === 'all' ? 'is-active' : ''}`}
-              onClick={() => onSelectTab('all')}
+              aria-selected={activeView === 'listings'}
+              className={`segmented-tabs__tab ${activeView === 'listings' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('listings')}
             >
-              All
-              <span className="segmented-tabs__count">{counts.all}</span>
+              Listings
+              <span className="segmented-tabs__count">{counts.listings}</span>
             </button>
+
             <button
-              id="tab-shortlist"
+              id="view-favorites"
               type="button"
               role="tab"
-              aria-selected={activeTab === 'shortlist'}
-              className={`segmented-tabs__tab ${activeTab === 'shortlist' ? 'is-active' : ''}`}
-              onClick={() => onSelectTab('shortlist')}
+              aria-selected={activeView === 'favorites'}
+              className={`segmented-tabs__tab ${activeView === 'favorites' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('favorites')}
             >
-              Shortlist
-              <span className="segmented-tabs__count">{counts.shortlist}</span>
+              Favorites
+              <span className="segmented-tabs__count">{counts.favorites}</span>
             </button>
+
             <button
-              id="tab-comps"
+              id="view-alerts"
               type="button"
               role="tab"
-              aria-selected={activeTab === 'comps'}
-              className={`segmented-tabs__tab ${activeTab === 'comps' ? 'is-active' : ''}`}
-              onClick={() => onSelectTab('comps')}
+              aria-selected={activeView === 'alerts'}
+              className={`segmented-tabs__tab ${activeView === 'alerts' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('alerts')}
             >
-              Comps
-              <span className="segmented-tabs__count">{counts.comps}</span>
+              Alerts
+              <span className="segmented-tabs__count">{counts.alertHits}</span>
+            </button>
+
+            <button
+              id="view-history"
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'history'}
+              className={`segmented-tabs__tab ${activeView === 'history' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('history')}
+            >
+              Prices
+              <span className="segmented-tabs__count">{counts.priceDrops}</span>
             </button>
           </div>
+
+          <button
+            id="btn-open-sync"
+            type="button"
+            className="icon-btn"
+            onClick={onOpenSync}
+            title="Sync live Bellport listings via RealtyAPI.io"
+          >
+            <span
+              className="status-dot"
+              style={{
+                background: apiConfigured ? 'var(--g-green)' : 'var(--g-yellow-600)',
+              }}
+            />
+            <RefreshCw size={14} />
+            <span style={{ display: 'inline' }}>Sync</span>
+          </button>
 
           <button
             id="btn-open-add"
             type="button"
             className="icon-btn icon-btn--primary"
             onClick={onOpenAdd}
-            title="Add or import listings"
+            title="Add or clip a listing"
           >
             <Plus size={16} />
             <span>Add</span>
@@ -97,7 +138,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             className={`icon-btn ${editMode ? 'is-active' : ''}`}
             onClick={onToggleEditMode}
-            title="Toggle inline headline/lede editing"
+            title="Toggle inline copy editing"
             aria-pressed={editMode}
           >
             <Edit3 size={15} />
