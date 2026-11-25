@@ -1,0 +1,99 @@
+:root {
+  // Core Four + Tints/Shades
+  --g-blue: #4285f4;
+  --g-blue-600: #1a73e8;
+  --g-blue-700: #185abc;
+  --g-blue-50: #e8f0fe;
+
+  --g-red: #ea4335;
+  --g-red-600: #d93025;
+  --g-red-50: #fce8e6;
+
+  --g-yellow: #fbbc04;
+  --g-yellow-600: #f9ab00;
+  --g-yellow-700: #b06000;
+  --g-yellow-50: #fef7e0;
+
+  --g-green: #34a853;
+  --g-green-600: #1e8e3e;
+  --g-green-50: #e6f4ea;
+
+  // Neutral Surface & Ink Scale
+  --grey-900: #202124;
+  --grey-800: #3c4043;
+  --grey-700: #5f6368;
+  --grey-500: #9aa0a6;
+  --grey-300: #dadce0;
+  --grey-200: #e8eaed;
+  --grey-100: #f1f3f4;
+  --grey-50: #f8f9fa;
+  --white: #ffffff;
+
+  // Semantic Aliases (Light Default)
+  --bg: var(--white);
+  --bg-band: var(--grey-50);
+  --surface: var(--white);
+  --surface-subtle: var(--grey-50);
+  --ink: var(--grey-900);
+  --ink-2: var(--grey-700);
+  --ink-muted: var(--grey-500);
+  --accent: var(--g-blue-600);
+  --accent-soft: var(--g-blue-50);
+  --line: var(--grey-200);
+  --line-strong: var(--grey-300);
+
+  // Typography, Layout, Radii & Motion
+  --font-display: 'Google Sans Display', 'Google Sans', Roboto, system-ui, sans-serif;
+  --font-text: 'Google Sans Text', 'Google Sans', Roboto, system-ui, sans-serif;
+  --font-mono: 'Google Sans Mono', 'Roboto Mono', monospace;
+
+  --fs-hero: clamp(34px, 4.4vw, 56px);
+  --fs-h2: clamp(24px, 2.6vw, 34px);
+  --fs-lede: clamp(17px, 1.35vw, 20px);
+  --fs-body: 16px;
+
+  --radius: 24px;
+  --radius-sm: 14px;
+  --radius-pill: 999px;
+
+  --shadow-1: 0 1px 2px rgba(60, 64, 67, 0.1), 0 2px 8px rgba(60, 64, 67, 0.06);
+  --shadow-2: 0 8px 24px rgba(60, 64, 67, 0.12), 0 2px 6px rgba(60, 64, 67, 0.08);
+
+  --dur-fast: 180ms;
+  --dur-base: 360ms;
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  --topbar-h: 72px;
+}
+
+[data-theme='dark'] {
+  --bg: #111317;
+  --bg-band: #171a20;
+  --surface: #1c2028;
+  --surface-subtle: #222732;
+  --ink: #f1f3f4;
+  --ink-2: #aeb4bc;
+  --ink-muted: #7f8691;
+  --accent: #6aa4ff;
+  --accent-soft: rgba(106, 164, 255, 0.14);
+  --line: #2a2f3a;
+  --line-strong: #3a4150;
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.48), 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
