@@ -290,6 +290,7 @@ export interface UnifiedHome {
   photoSource?: 'mls' | 'streetview' | 'aerial';
   archetype: ArchetypeIllustration;
   isFavorite: boolean;
+  isHidden: boolean;
   lat: number;
   lon: number;
   owner?: string | null;
@@ -302,7 +303,8 @@ export function buildUnifiedVillageCatalog(
   parcels: VillageParcel[],
   listings: Listing[],
   sales: HistoricalSaleRecord[],
-  parcelFavorites: Record<string, boolean> = {}
+  parcelFavorites: Record<string, boolean> = {},
+  parcelHidden: Record<string, boolean> = {}
 ): UnifiedHome[] {
   const listingsById = new Map(listings.map((l) => [l.id, l]));
   const salesByPid = new Map<string, HistoricalSaleRecord>();
@@ -341,6 +343,9 @@ export function buildUnifiedVillageCatalog(
     const lotAcVal = linked?.lotAcres ?? p.acres;
     const fallbackLawn = Number(
       Math.max(0.04, lotAcVal - ((p.fpSqft || sqftVal * 0.62) / 43560)).toFixed(2)
+    );
+    const isHidden = Boolean(
+      parcelHidden[p.id] || (linked?.id ? parcelHidden[linked.id] : false)
     );
 
     catalog.push({
@@ -400,7 +405,9 @@ export function buildUnifiedVillageCatalog(
       archetype:
         linked?.archetype ??
         (p.waterfront ? 'bayfront' : p.pool ? 'shingle-pool' : 'colonial'),
-      isFavorite: linked ? Boolean(linked.isFavorite) : Boolean(parcelFavorites[p.id]),
+      isFavorite:
+        !isHidden && (linked ? Boolean(linked.isFavorite) : Boolean(parcelFavorites[p.id])),
+      isHidden,
       lat: p.lat,
       lon: p.lon,
       owner: p.owner,
@@ -461,6 +468,7 @@ export function homeMatchesUnifiedFilters(
   filters: UnifiedFilters,
   isDirectoryMode: boolean
 ): boolean {
+  if (h.isHidden) return false;
   const nl = filters.nlQuery.trim() ? parseNaturalLanguageQuery(filters.nlQuery) : null;
 
   const anyStatus =

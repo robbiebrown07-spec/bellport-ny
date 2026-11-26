@@ -7,6 +7,7 @@ import {
   Home,
   Plus,
   Sparkles,
+  ThumbsDown,
   Trash2,
   X,
 } from 'lucide-react';
@@ -38,12 +39,14 @@ interface PropertyDrawerProps {
   allListings: Listing[];
   privacyBlur: boolean;
   searchQuery: string;
+  isHidden?: boolean;
   hasPrev: boolean;
   hasNext: boolean;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
   onUpdateListing: (id: string, patch: Partial<Listing>) => void;
+  onToggleHidden?: () => void;
   onDeleteListing: (id: string) => void;
 }
 
@@ -53,12 +56,14 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   allListings,
   privacyBlur,
   searchQuery,
+  isHidden = false,
   hasPrev,
   hasNext,
   onPrev,
   onNext,
   onClose,
   onUpdateListing,
+  onToggleHidden,
   onDeleteListing,
 }) => {
   const [newTag, setNewTag] = useState('');
@@ -185,6 +190,28 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               />
               <span>{listing.isFavorite ? 'Saved' : 'Save'}</span>
             </button>
+
+            {onToggleHidden && (
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={onToggleHidden}
+                aria-pressed={isHidden}
+                title={isHidden ? 'Restore to search results' : 'Remove from search results'}
+                style={
+                  isHidden
+                    ? { background: '#fce8e6', color: '#c5221f', borderColor: 'rgba(197,34,31,0.3)' }
+                    : undefined
+                }
+              >
+                <ThumbsDown
+                  size={15}
+                  fill={isHidden ? '#c5221f' : 'none'}
+                  color={isHidden ? '#c5221f' : 'currentColor'}
+                />
+                <span>{isHidden ? 'Hidden · Restore' : 'Not for Me'}</span>
+              </button>
+            )}
 
             <button
               id="btn-close-drawer"

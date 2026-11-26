@@ -15,7 +15,7 @@ const NAV_ITEMS: Array<{ id: PrimaryView; label: string }> = [
   { id: 'history', label: 'Prices' },
   { id: 'favorites', label: 'Saved' },
   { id: 'alerts', label: 'Alerts' },
-  { id: 'about', label: 'About Bellport' },
+  { id: 'about', label: 'Village' },
 ];
 
 export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpenSettings }) => {
@@ -37,9 +37,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
             className="topbar__brand"
             onClick={() => onSelectView('map')}
           >
-            <AppMark size={26} />
+            <AppMark size={44} />
             <div>
-              <div className="topbar__title">Bellport, NY</div>
+              <div className="topbar__title">Bellport Watch</div>
               <div className="topbar__subtitle">Robbie’s search for a family vacation house</div>
             </div>
           </button>
@@ -47,7 +47,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
           <button
             id="btn-open-settings-mobile"
             type="button"
-            className="icon-btn topbar__settings-mobile"
+            className="icon-btn topbar__settings-btn topbar__settings-mobile"
             onClick={onOpenSettings}
             title="Settings & Sync"
             aria-label="Settings"
@@ -87,7 +87,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
           <button
             id="btn-open-settings"
             type="button"
-            className="icon-btn topbar__settings-desktop"
+            className="icon-btn topbar__settings-btn topbar__settings-desktop"
             onClick={onOpenSettings}
             title="Settings & Sync"
             aria-label="Settings"
@@ -107,4 +107,3 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
     </header>
   );
 };
-

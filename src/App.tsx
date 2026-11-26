@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Heart, LayoutGrid, List, RotateCcw } from 'lucide-react';
+import { Heart, LayoutGrid, List, RotateCcw, ThumbsDown } from 'lucide-react';
 import { median } from 'd3-array';
 import type {
   EmailAlertRule,
@@ -40,6 +40,7 @@ import { AboutBellportView } from './components/AboutBellportView';
 import { UnifiedFilterBar } from './components/UnifiedFilterBar';
 import { ValuationBadge } from './components/ValuationBadge';
 import { RobbieFitBadge } from './components/RobbieFitBadge';
+import { ScrollReveal } from './components/ScrollReveal';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<PersistedAppState | null>(null);
@@ -87,7 +88,7 @@ export const App: React.FC = () => {
         setSalesHistory(sHist);
       })
       .catch((err) => {
-        console.error('Failed to bootstrap Bellport NY:', err);
+        console.error('Failed to bootstrap Bellport Watch:', err);
       });
     return () => {
       active = false;
@@ -143,6 +144,19 @@ export const App: React.FC = () => {
     [appState?.savedParcelIds]
   );
 
+  const hiddenParcelIds = useMemo<Record<string, boolean>>(
+    () => appState?.hiddenParcelIds ?? {},
+    [appState?.hiddenParcelIds]
+  );
+
+  const tasteFilters = useMemo<UnifiedFilters>(
+    () => ({
+      ...INITIAL_UNIFIED_FILTERS,
+      ...((appState?.tasteFilters ?? {}) as Partial<UnifiedFilters>),
+    }),
+    [appState?.tasteFilters]
+  );
+
   const emailAlerts = useMemo<EmailAlertRule[]>(() => {
     if (appState?.emailAlerts && appState.emailAlerts.length > 0) {
       return appState.emailAlerts;
@@ -179,10 +193,11 @@ export const App: React.FC = () => {
             parcelsBundle.parcels,
             allListings,
             salesHistory,
-            savedParcelIds
+            savedParcelIds,
+            hiddenParcelIds
           )
         : [],
-    [parcelsBundle, allListings, salesHistory, savedParcelIds]
+    [parcelsBundle, allListings, salesHistory, savedParcelIds, hiddenParcelIds]
   );
 
   const parsedNl = useMemo(
@@ -202,6 +217,15 @@ export const App: React.FC = () => {
             evaluateArchitecturalBeauty(toPseudoListing(a)).score10
           );
         }
+        const pa = toPseudoListing(a);
+        const pb = toPseudoListing(b);
+        const scoreA =
+          evaluateRobbieFit(pa).score + evaluateArchitecturalBeauty(pa).score10 * 5 +
+          (a.photoSource === 'mls' ? 6 : 0);
+        const scoreB =
+          evaluateRobbieFit(pb).score + evaluateArchitecturalBeauty(pb).score10 * 5 +
+          (b.photoSource === 'mls' ? 6 : 0);
+        if (Math.abs(scoreB - scoreA) > 1.5) return scoreB - scoreA;
         if (a.hasPastSale !== b.hasPastSale) return a.hasPastSale ? -1 : 1;
         return b.price - a.price;
       }
@@ -291,9 +315,13 @@ export const App: React.FC = () => {
   const toggleHomeFavorite = (parcelId: string, listingId: string | null) => {
     setAppState((prev) => {
       if (!prev) return prev;
+      const nextHidden = { ...(prev.hiddenParcelIds ?? {}), [parcelId]: false };
+      if (listingId) nextHidden[listingId] = false;
+
       if (listingId && prev.listings.some((item) => item.id === listingId)) {
         return {
           ...prev,
+          hiddenParcelIds: nextHidden,
           listings: prev.listings.map((item) =>
             item.id === listingId ? { ...item, isFavorite: !item.isFavorite } : item
           ),
@@ -302,10 +330,42 @@ export const App: React.FC = () => {
       const cur = Boolean((prev.savedParcelIds ?? {})[parcelId]);
       return {
         ...prev,
+        hiddenParcelIds: nextHidden,
         savedParcelIds: {
           ...(prev.savedParcelIds ?? {}),
           [parcelId]: !cur,
         },
+      };
+    });
+  };
+
+  const toggleHomeHidden = (parcelId: string, listingId: string | null) => {
+    setAppState((prev) => {
+      if (!prev) return prev;
+      const curHidden = Boolean(
+        (prev.hiddenParcelIds ?? {})[parcelId] ||
+          (listingId ? (prev.hiddenParcelIds ?? {})[listingId] : false)
+      );
+      const nextVal = !curHidden;
+      const nextHidden: Record<string, boolean> = {
+        ...(prev.hiddenParcelIds ?? {}),
+        [parcelId]: nextVal,
+      };
+      if (listingId) nextHidden[listingId] = nextVal;
+
+      const nextSaved = { ...(prev.savedParcelIds ?? {}) };
+      if (nextVal) nextSaved[parcelId] = false;
+
+      return {
+        ...prev,
+        hiddenParcelIds: nextHidden,
+        savedParcelIds: nextSaved,
+        listings:
+          nextVal && listingId
+            ? prev.listings.map((item) =>
+                item.id === listingId ? { ...item, isFavorite: false } : item
+              )
+            : prev.listings,
       };
     });
   };
@@ -342,6 +402,8 @@ export const App: React.FC = () => {
     );
   };
 
+  const activeForSaleCount = catalog.filter((h) => h.isForSale && !h.isHidden).length;
+
   return (
     <>
       <TopBar
@@ -355,7 +417,9 @@ export const App: React.FC = () => {
           <VillageParcelMapView
             listings={allListings}
             savedParcelIds={savedParcelIds}
+            hiddenParcelIds={hiddenParcelIds}
             onToggleFavorite={toggleHomeFavorite}
+            onToggleHidden={toggleHomeHidden}
             unifiedFilters={unifiedFilters}
             onChangeUnifiedFilters={(next) => {
               setUnifiedFilters(next);
@@ -369,8 +433,20 @@ export const App: React.FC = () => {
 
         {activeView === 'favorites' && (
           <FavoritesAndTasteView
-            listings={catalog.length > 0 ? catalog.map(toPseudoListing) : allListings}
-            aiTasteMemo={appState.aiTasteMemo}
+            catalog={catalog}
+            allListings={allListings}
+            tasteFilters={tasteFilters}
+            onChangeTasteFilters={(next) =>
+              setAppState((prev) =>
+                prev
+                  ? { ...prev, tasteFilters: next as unknown as Record<string, unknown> }
+                  : prev
+              )
+            }
+            onApplyToMap={(next) => {
+              setUnifiedFilters(next);
+              setActiveView('map');
+            }}
             onOpenListing={(id) => setSelectedParcelOrListingId(id)}
             onToggleFavorite={(id) => {
               const found = catalog.find(
@@ -379,9 +455,13 @@ export const App: React.FC = () => {
               if (found) toggleHomeFavorite(found.parcelId, found.listingId);
               else toggleHomeFavorite(id, id);
             }}
-            onUpdateAiTasteMemo={(memo) =>
-              setAppState((prev) => (prev ? { ...prev, aiTasteMemo: memo } : prev))
-            }
+            onToggleHidden={(id) => {
+              const found = catalog.find(
+                (h) => h.parcelId === id || h.listingId === id || h.uid === id
+              );
+              if (found) toggleHomeHidden(found.parcelId, found.listingId);
+              else toggleHomeHidden(id, id);
+            }}
           />
         )}
 
@@ -408,6 +488,8 @@ export const App: React.FC = () => {
         {activeView === 'about' && (
           <AboutBellportView
             pois={parcelsBundle?.pois ?? []}
+            catalog={catalog}
+            onOpenListing={(id) => setSelectedParcelOrListingId(id)}
             onJumpToMap={() => setActiveView('map')}
           />
         )}
@@ -461,7 +543,7 @@ export const App: React.FC = () => {
                         setHomesLimit(24);
                       }}
                     >
-                      <span>For Sale (12)</span>
+                      <span>For Sale ({activeForSaleCount})</span>
                     </button>
 
                     <button
@@ -526,7 +608,7 @@ export const App: React.FC = () => {
                       }
                     >
                       <option value="">All Valuations</option>
-                      <option value="underpriced">Underpriced Only</option>
+                      <option value="underpriced">Good Deals (Underpriced)</option>
                       <option value="overpriced">Overpriced Only</option>
                     </select>
 
@@ -539,7 +621,7 @@ export const App: React.FC = () => {
                       <option value="featured">Sort: Featured</option>
                       <option value="robbie-fit">Best Fit for Robbie</option>
                       <option value="beauty-desc">Architectural Beauty</option>
-                      <option value="underpriced">Most Underpriced</option>
+                      <option value="underpriced">Best Deal (Most Underpriced)</option>
                       <option value="price-asc">Price: Low → High</option>
                       <option value="price-desc">Price: High → Low</option>
                       <option value="sqft-desc">Largest Sq Ft</option>
@@ -592,7 +674,7 @@ export const App: React.FC = () => {
                   </div>
                 ) : layout === 'grid' ? (
                   <div className="listing-grid">
-                    {visibleHomes.map((h) => {
+                    {visibleHomes.map((h, idx) => {
                       const ppsf = h.sqft > 0 ? Math.round(h.price / h.sqft) : 0;
                       const pseudo = toPseudoListing(h);
                       const deal = evaluateGoodDeal(pseudo, allListings);
@@ -600,168 +682,186 @@ export const App: React.FC = () => {
                       const beauty = evaluateArchitecturalBeauty(pseudo);
 
                       return (
-                        <article key={h.parcelId} className="listing-card">
-                          <div
-                            className="listing-card__media"
-                            onClick={() => setSelectedParcelOrListingId(h.parcelId)}
-                          >
-                            <PropertyIllustration
-                              archetype={h.archetype}
-                              address={h.address}
-                              styleName={h.style}
-                              photoUrl={h.photoUrl}
-                            />
-                            <div className="listing-card__badges">
-                              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                <RobbieFitBadge listing={pseudo} fit={fit} compact />
-                                <span
-                                  className="badge"
-                                  style={{
-                                    background: 'rgba(255,255,255,0.94)',
-                                    color: 'var(--ink)',
-                                  }}
-                                >
-                                  {h.area}
-                                </span>
+                        <ScrollReveal key={h.parcelId} delayMs={(idx % 3) * 60}>
+                          <article className="listing-card" style={{ height: '100%' }}>
+                            <div
+                              className="listing-card__media"
+                              onClick={() => setSelectedParcelOrListingId(h.parcelId)}
+                            >
+                              <PropertyIllustration
+                                archetype={h.archetype}
+                                address={h.address}
+                                styleName={h.style}
+                                photoUrl={h.photoUrl}
+                              />
+                              <div className="listing-card__badges">
+                                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                  <RobbieFitBadge listing={pseudo} fit={fit} compact />
+                                  <span
+                                    className="badge"
+                                    style={{
+                                      background: 'rgba(255,255,255,0.94)',
+                                      color: 'var(--ink)',
+                                    }}
+                                  >
+                                    {h.area}
+                                  </span>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: 5, pointerEvents: 'auto' }}>
+                                  <button
+                                    type="button"
+                                    className="status-dot-btn"
+                                    title="Remove from results"
+                                    aria-label={`Remove ${h.address} from results`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleHomeHidden(h.parcelId, h.listingId);
+                                    }}
+                                    style={{ padding: '5px 8px', pointerEvents: 'auto' }}
+                                  >
+                                    <ThumbsDown size={14} color="var(--ink-2)" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="status-dot-btn"
+                                    title="Save favorite"
+                                    aria-label={`Save ${h.address}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleHomeFavorite(h.parcelId, h.listingId);
+                                    }}
+                                    style={{ padding: '5px 8px', pointerEvents: 'auto' }}
+                                  >
+                                    <Heart
+                                      size={14}
+                                      fill={h.isFavorite ? 'var(--g-red)' : 'none'}
+                                      color={h.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                                    />
+                                  </button>
+                                </div>
                               </div>
 
-                              <button
-                                type="button"
-                                className="status-dot-btn"
-                                aria-label={`Save ${h.address}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleHomeFavorite(h.parcelId, h.listingId);
-                                }}
-                                style={{ padding: '5px 8px', pointerEvents: 'auto' }}
-                              >
-                                <Heart
-                                  size={14}
-                                  fill={h.isFavorite ? 'var(--g-red)' : 'none'}
-                                  color={h.isFavorite ? 'var(--g-red)' : 'currentColor'}
-                                />
-                              </button>
-                            </div>
-
-                            <span
-                              className="badge"
-                              style={{
-                                position: 'absolute',
-                                left: 12,
-                                bottom: 10,
-                                fontSize: 11,
-                                background: h.isForSale
-                                  ? '#9be3b0'
-                                  : h.hasPastSale
-                                    ? 'rgba(32,33,36,0.82)'
-                                    : 'rgba(255,255,255,0.92)',
-                                color: h.isForSale
-                                  ? '#124d2c'
-                                  : h.hasPastSale
-                                    ? '#ffffff'
-                                    : 'var(--ink-2)',
-                                border: 'none',
-                              }}
-                            >
-                              {h.isForSale
-                                ? 'For Sale'
-                                : h.hasPastSale
-                                  ? `Sold ${h.soldYear ?? ''}`
-                                  : 'Off-Market · Est. Value'}
-                            </span>
-
-                            {h.photoSource && h.photoSource !== 'mls' && (
                               <span
+                                className="badge"
                                 style={{
                                   position: 'absolute',
-                                  right: 10,
+                                  left: 12,
                                   bottom: 10,
-                                  padding: '2px 7px',
-                                  borderRadius: 999,
-                                  fontSize: 10,
-                                  fontWeight: 500,
-                                  background: 'rgba(32,33,36,0.68)',
-                                  color: '#ffffff',
+                                  fontSize: 11,
+                                  background: h.isForSale
+                                    ? '#9be3b0'
+                                    : h.hasPastSale
+                                      ? 'rgba(32,33,36,0.82)'
+                                      : 'rgba(255,255,255,0.92)',
+                                  color: h.isForSale
+                                    ? '#124d2c'
+                                    : h.hasPastSale
+                                      ? '#ffffff'
+                                      : 'var(--ink-2)',
+                                  border: 'none',
                                 }}
                               >
-                                {h.photoSource === 'aerial' ? 'Aerial View' : 'Street View'}
+                                {h.isForSale
+                                  ? 'For Sale'
+                                  : h.hasPastSale
+                                    ? `Sold ${h.soldYear ?? ''}`
+                                    : 'Off-Market · Est. Value'}
                               </span>
-                            )}
-                          </div>
 
-                          <div className="listing-card__body">
-                            <div>
-                              <div className="listing-card__top">
-                                <span className="listing-card__price priv-val">
-                                  {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
-                                  {h.price.toLocaleString()}
+                              {h.photoSource && h.photoSource !== 'mls' && (
+                                <span
+                                  style={{
+                                    position: 'absolute',
+                                    right: 10,
+                                    bottom: 10,
+                                    padding: '2px 7px',
+                                    borderRadius: 999,
+                                    fontSize: 10,
+                                    fontWeight: 500,
+                                    background: 'rgba(32,33,36,0.68)',
+                                    color: '#ffffff',
+                                  }}
+                                >
+                                  {h.photoSource === 'aerial' ? 'Aerial View' : 'Street View'}
                                 </span>
-                                <ValuationBadge listing={pseudo} deal={deal} compact />
+                              )}
+                            </div>
+
+                            <div className="listing-card__body">
+                              <div>
+                                <div className="listing-card__top">
+                                  <span className="listing-card__price priv-val">
+                                    {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
+                                    {h.price.toLocaleString()}
+                                  </span>
+                                  <ValuationBadge listing={pseudo} deal={deal} compact />
+                                </div>
+
+                                <h3
+                                  className="listing-card__address"
+                                  onClick={() => setSelectedParcelOrListingId(h.parcelId)}
+                                >
+                                  <HighlightedText
+                                    text={h.address}
+                                    query={unifiedFilters.nlQuery}
+                                  />
+                                </h3>
+                                <div className="listing-card__sub">
+                                  <strong>{h.style}</strong>
+                                </div>
                               </div>
 
-                              <h3
-                                className="listing-card__address"
-                                onClick={() => setSelectedParcelOrListingId(h.parcelId)}
-                              >
+                              <p className="listing-card__headline" style={{ margin: 0 }}>
                                 <HighlightedText
-                                  text={h.address}
+                                  text={h.styleSummary}
                                   query={unifiedFilters.nlQuery}
                                 />
-                              </h3>
-                              <div className="listing-card__sub">
-                                <strong>{h.style}</strong>
+                              </p>
+
+                              <div
+                                style={{
+                                  fontSize: 11.5,
+                                  color: 'var(--ink-2)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  gap: 8,
+                                }}
+                              >
+                                <span>Stores: {h.distStoresMi} mi ({h.walkStoresMin}m)</span>
+                                <span>Marina: {h.distMarinaMi} mi ({h.walkMarinaMin}m)</span>
+                              </div>
+
+                              <div
+                                className="listing-card__specs"
+                                style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}
+                              >
+                                <div>
+                                  <strong>
+                                    {h.beds}/{h.baths}
+                                  </strong>
+                                  <span>Bd/Ba</span>
+                                </div>
+                                <div>
+                                  <strong>{h.sqft.toLocaleString()}</strong>
+                                  <span>Sq Ft</span>
+                                </div>
+                                <div>
+                                  <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
+                                  <span>$/Ft²</span>
+                                </div>
+                                <div>
+                                  <strong>{h.lotAcres}</strong>
+                                  <span>Acres</span>
+                                </div>
+                                <div>
+                                  <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
+                                  <span>Beauty</span>
+                                </div>
                               </div>
                             </div>
-
-                            <p className="listing-card__headline" style={{ margin: 0 }}>
-                              <HighlightedText
-                                text={h.styleSummary}
-                                query={unifiedFilters.nlQuery}
-                              />
-                            </p>
-
-                            <div
-                              style={{
-                                fontSize: 11.5,
-                                color: 'var(--ink-2)',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                gap: 8,
-                              }}
-                            >
-                              <span>Stores: {h.distStoresMi} mi ({h.walkStoresMin}m)</span>
-                              <span>Marina: {h.distMarinaMi} mi ({h.walkMarinaMin}m)</span>
-                            </div>
-
-                            <div
-                              className="listing-card__specs"
-                              style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}
-                            >
-                              <div>
-                                <strong>
-                                  {h.beds}/{h.baths}
-                                </strong>
-                                <span>Bd/Ba</span>
-                              </div>
-                              <div>
-                                <strong>{h.sqft.toLocaleString()}</strong>
-                                <span>Sq Ft</span>
-                              </div>
-                              <div>
-                                <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
-                                <span>$/Ft²</span>
-                              </div>
-                              <div>
-                                <strong>{h.lotAcres}</strong>
-                                <span>Acres</span>
-                              </div>
-                              <div>
-                                <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
-                                <span>Beauty</span>
-                              </div>
-                            </div>
-                          </div>
-                        </article>
+                          </article>
+                        </ScrollReveal>
                       );
                     })}
                   </div>
@@ -770,7 +870,7 @@ export const App: React.FC = () => {
                     <table className="listings-table">
                       <thead>
                         <tr>
-                          <th>♥</th>
+                          <th>♥ / 👎</th>
                           <th>Address &amp; Architectural Style</th>
                           <th>Fit</th>
                           <th>Area</th>
@@ -796,23 +896,30 @@ export const App: React.FC = () => {
                               key={h.parcelId}
                               onClick={() => setSelectedParcelOrListingId(h.parcelId)}
                             >
-                              <td
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleHomeFavorite(h.parcelId, h.listingId);
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  className="status-dot-btn"
-                                  aria-label={`Save ${h.address}`}
-                                >
-                                  <Heart
-                                    size={14}
-                                    fill={h.isFavorite ? 'var(--g-red)' : 'none'}
-                                    color={h.isFavorite ? 'var(--g-red)' : 'currentColor'}
-                                  />
-                                </button>
+                              <td onClick={(e) => e.stopPropagation()}>
+                                <div style={{ display: 'inline-flex', gap: 4 }}>
+                                  <button
+                                    type="button"
+                                    className="status-dot-btn"
+                                    aria-label={`Save ${h.address}`}
+                                    onClick={() => toggleHomeFavorite(h.parcelId, h.listingId)}
+                                  >
+                                    <Heart
+                                      size={14}
+                                      fill={h.isFavorite ? 'var(--g-red)' : 'none'}
+                                      color={h.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                                    />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="status-dot-btn"
+                                    title="Remove from results"
+                                    aria-label={`Remove ${h.address} from results`}
+                                    onClick={() => toggleHomeHidden(h.parcelId, h.listingId)}
+                                  >
+                                    <ThumbsDown size={13} color="var(--ink-2)" />
+                                  </button>
+                                </div>
                               </td>
                               <td>
                                 <strong style={{ display: 'block' }}>
@@ -892,12 +999,18 @@ export const App: React.FC = () => {
         allListings={allListings}
         privacyBlur={appState.preferences.privacyBlur}
         searchQuery={unifiedFilters.nlQuery}
+        isHidden={Boolean(drawerHome?.isHidden)}
         hasPrev={false}
         hasNext={false}
         onPrev={() => {}}
         onNext={() => {}}
         onClose={() => setSelectedParcelOrListingId(null)}
         onUpdateListing={updateListing}
+        onToggleHidden={
+          drawerHome
+            ? () => toggleHomeHidden(drawerHome.parcelId, drawerHome.listingId)
+            : undefined
+        }
         onDeleteListing={deleteListing}
       />
 

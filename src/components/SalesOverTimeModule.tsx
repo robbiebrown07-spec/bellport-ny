@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { scaleLinear } from 'd3-scale';
 import { median } from 'd3-array';
-import { RotateCcw } from 'lucide-react';
+import { ArrowRight, MapPin, RotateCcw, X } from 'lucide-react';
 import type { HistoricalSaleRecord } from '../types';
 import {
   fmtShortDollar,
@@ -13,6 +13,7 @@ import {
 interface SalesOverTimeModuleProps {
   privacyBlur: boolean;
   onSelectParcel?: (parcelId: string) => void;
+  onOpenHome?: (parcelId: string) => void;
 }
 
 type TimeSpanOption = '5y' | '10y' | '20y' | 'all';
@@ -63,6 +64,7 @@ function dateToYearFloat(iso: string): number {
 export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   privacyBlur: _privacyBlur,
   onSelectParcel,
+  onOpenHome,
 }) => {
   const [sales, setSales] = useState<HistoricalSaleRecord[]>([]);
   const [metric, setMetric] = useState<'price' | 'ppsf'>('price');
@@ -74,6 +76,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   const [minSqft, setMinSqft] = useState<number | null>(null);
   const [minLot, setMinLot] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -209,7 +212,10 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   if (xYears[xYears.length - 1] !== 2026) xYears.push(2026);
 
   const yTicks = yScale.ticks(5);
-  const hoveredSale = filtered.find((s) => s.id === hoveredId) ?? null;
+  const pinnedSale = pinnedId ? (filtered.find((s) => s.id === pinnedId) ?? null) : null;
+  const hoveredSale = hoveredId ? (filtered.find((s) => s.id === hoveredId) ?? null) : null;
+  // When a dot is clicked (pinnedSale), keep it locked even if the cursor passes over other dots!
+  const activeSale = pinnedSale ?? hoveredSale;
 
   const linePath = yearlyMedians
     .map((pt, i) => `${i === 0 ? 'M' : 'L'}${xScale(pt.x).toFixed(1)},${yScale(pt.medianVal).toFixed(1)}`)
@@ -462,6 +468,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
           style={{ width: '100%', height: 'auto', display: 'block' }}
           role="img"
           aria-label="Bellport Village closed home prices over time compared to the U.S. national real estate average"
+          onClick={() => setPinnedId(null)}
         >
           <g transform={`translate(${m.left},${m.top})`}>
             {yTicks.map((t) => (
@@ -518,57 +525,174 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
               />
             )}
 
-            {/* Individual Closed Sales */}
+            {/* Individual Closed Sales (Click any dot to pin its address & home card below!) */}
             {filtered.map((s) => {
               const cx = xScale(dateToYearFloat(s.date));
               const cy = yScale(metric === 'ppsf' ? (s.ppsf ?? 0) : s.price);
-              const isHov = hoveredId === s.id;
+              const isPinned = pinnedSale?.id === s.id;
+              const isHov = !pinnedSale && hoveredId === s.id;
               return (
-                <circle
-                  key={s.id}
-                  cx={cx}
-                  cy={cy}
-                  r={isHov ? 7 : 4.5}
-                  fill={s.belowSC ? 'var(--accent)' : '#7baaf7'}
-                  fillOpacity={isHov ? 1 : 0.72}
-                  stroke="#ffffff"
-                  strokeWidth={1.3}
-                  style={{ cursor: s.parcelId ? 'pointer' : 'default' }}
-                  onMouseEnter={() => setHoveredId(s.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onClick={() => {
-                    if (s.parcelId && onSelectParcel) onSelectParcel(s.parcelId);
-                  }}
-                />
+                <g key={s.id}>
+                  {isPinned && (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={11}
+                      fill="rgba(234, 67, 53, 0.22)"
+                      stroke="#ea4335"
+                      strokeWidth={1.8}
+                      pointerEvents="none"
+                    />
+                  )}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={isPinned ? 7.2 : isHov ? 6.8 : 4.5}
+                    fill={isPinned ? '#ea4335' : s.belowSC ? 'var(--accent)' : '#7baaf7'}
+                    fillOpacity={isPinned || isHov ? 1 : 0.72}
+                    stroke="#ffffff"
+                    strokeWidth={1.4}
+                    style={{ cursor: 'pointer' }}
+                    onMouseEnter={() => {
+                      if (!pinnedSale) setHoveredId(s.id);
+                    }}
+                    onMouseLeave={() => {
+                      if (!pinnedSale) setHoveredId(null);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPinnedId(s.id);
+                      setHoveredId(s.id);
+                    }}
+                  />
+                </g>
               );
             })}
           </g>
         </svg>
 
-        {hoveredSale && (
+        {/* Pinned / Active Sale Callout Card Below Chart — Stays Locked on Click! */}
+        {activeSale ? (
           <div
             style={{
-              marginTop: 6,
-              padding: '8px 12px',
-              borderRadius: 12,
-              background: 'var(--bg)',
-              border: '1px solid var(--line)',
+              marginTop: 8,
+              padding: '10px 14px',
+              borderRadius: 14,
+              background: pinnedSale ? '#f8fbff' : 'var(--bg)',
+              border: pinnedSale ? '1.5px solid var(--accent)' : '1px solid var(--line)',
+              boxShadow: pinnedSale ? 'var(--shadow-1)' : 'none',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              fontSize: 12,
+              fontSize: 12.5,
               flexWrap: 'wrap',
-              gap: 8,
+              gap: 12,
             }}
           >
-            <div>
-              <strong>{hoveredSale.address}</strong> · <span>{hoveredSale.area}</span> · Sold{' '}
-              {hoveredSale.date} ({hoveredSale.source})
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              {activeSale.parcelId && (
+                <img
+                  src={resolveAssetUrl(`/photos/${activeSale.parcelId}.webp`)}
+                  alt={activeSale.address}
+                  onClick={() => {
+                    if (activeSale.parcelId && onOpenHome) onOpenHome(activeSale.parcelId);
+                    else if (activeSale.parcelId && onSelectParcel) onSelectParcel(activeSale.parcelId);
+                  }}
+                  style={{
+                    width: 68,
+                    height: 46,
+                    objectFit: 'cover',
+                    borderRadius: 8,
+                    border: '1px solid var(--line)',
+                    flexShrink: 0,
+                    cursor: activeSale.parcelId && (onOpenHome || onSelectParcel) ? 'pointer' : 'default',
+                  }}
+                />
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {activeSale.parcelId && (onOpenHome || onSelectParcel) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSale.parcelId && onOpenHome) onOpenHome(activeSale.parcelId);
+                        else if (activeSale.parcelId && onSelectParcel) onSelectParcel(activeSale.parcelId);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: 'var(--accent)',
+                        textDecoration: 'underline',
+                        textUnderlineOffset: 3,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      {activeSale.address}
+                    </button>
+                  ) : (
+                    <strong style={{ fontSize: 14 }}>{activeSale.address}</strong>
+                  )}
+                  <span style={{ color: 'var(--ink-2)' }}>· {activeSale.area}</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 2 }}>
+                  Sold {activeSale.date} ({activeSale.source}) ·{' '}
+                  <strong className="priv-val" style={{ color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>
+                    ${activeSale.price.toLocaleString()}
+                  </strong>
+                  {activeSale.ppsf ? ` ($${activeSale.ppsf}/ft²)` : ''} · {activeSale.acres ?? 0.3} ac
+                </div>
+              </div>
             </div>
-            <div className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-              ${hoveredSale.price.toLocaleString()}
-              {hoveredSale.ppsf ? ` ($${hoveredSale.ppsf}/ft²)` : ''} · {hoveredSale.acres ?? 0.3} ac
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+              {activeSale.parcelId && onSelectParcel && onOpenHome && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{ height: 32, padding: '0 10px', fontSize: 12 }}
+                  onClick={() => onSelectParcel(activeSale.parcelId!)}
+                >
+                  <MapPin size={13} />
+                  <span>Show on Map</span>
+                </button>
+              )}
+              {activeSale.parcelId && (onOpenHome || onSelectParcel) && (
+                <button
+                  type="button"
+                  className="icon-btn icon-btn--primary"
+                  style={{ height: 32, padding: '0 12px', fontSize: 12 }}
+                  onClick={() => {
+                    if (activeSale.parcelId && onOpenHome) onOpenHome(activeSale.parcelId);
+                    else if (activeSale.parcelId && onSelectParcel) onSelectParcel(activeSale.parcelId);
+                  }}
+                >
+                  <span>More Info on Home</span>
+                  <ArrowRight size={13} />
+                </button>
+              )}
+              {pinnedSale && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinnedId(null);
+                    setHoveredId(null);
+                  }}
+                  aria-label="Clear selected sale"
+                  className="icon-btn"
+                  style={{ width: 30, height: 30, padding: 0, justifyContent: 'center' }}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-muted)' }}>
+            Click any dot on the chart to lock its address below and open full home info.
           </div>
         )}
 

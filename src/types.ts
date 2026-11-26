@@ -347,6 +347,8 @@ export interface PersistedAppState {
   updatedAt: string;
   listings: Listing[];
   savedParcelIds?: Record<string, boolean>;
+  hiddenParcelIds?: Record<string, boolean>;
+  tasteFilters?: Record<string, unknown>;
   streetAlerts?: StreetAlertRule[];
   emailAlerts?: EmailAlertRule[];
   aiTasteMemo?: {

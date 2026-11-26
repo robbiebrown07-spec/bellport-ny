@@ -49,8 +49,8 @@ export const ValuationBadge: React.FC<ValuationBadgeProps> = ({
     ? deal.status === 'fair'
       ? 'Fair Value'
       : deal.status === 'underpriced'
-        ? `${Math.abs(deal.diffPct)}% Underpriced`
-        : `+${deal.diffPct}% Overpriced`
+        ? `Good Deal · ${Math.abs(deal.diffPct)}% Under`
+        : `Overpriced · +${deal.diffPct}%`
     : deal.badgeLabel;
 
   return (

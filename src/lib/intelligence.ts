@@ -12,7 +12,7 @@ export interface ValuationBreakdownRow {
 
 export interface DealEvaluation {
   score: number; // 0-100
-  tier: 'Strong Value' | 'Fair Ask' | 'Full Premium' | 'Overpriced';
+  tier: 'Good Deal' | 'Fair Value' | 'Overpriced';
   tone: 'green' | 'blue' | 'yellow' | 'red';
   status: 'underpriced' | 'overpriced' | 'fair';
   diffDollar: number; // listing.price - estimatedFairPrice (+ overpriced, - underpriced)
@@ -306,9 +306,9 @@ export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): Dea
   const amtText = absK >= 1000 ? `$${(Math.abs(diffDollar) / 1_000_000).toFixed(2)}M` : `$${absK}k`;
 
   let status: DealEvaluation['status'] = 'fair';
-  let badgeLabel = `Fairly Priced (Est. $${(estimatedFairPrice / 1_000_000).toFixed(2)}M)`;
+  let badgeLabel = `Fair Value (Est. $${(estimatedFairPrice / 1_000_000).toFixed(2)}M)`;
   let tone: DealEvaluation['tone'] = 'blue';
-  let tier: DealEvaluation['tier'] = 'Fair Ask';
+  let tier: DealEvaluation['tier'] = 'Fair Value';
 
   const askPpsf = Math.round(listing.price / effectiveSqft);
   const fairPpsf = Math.round(estimatedFairPrice / effectiveSqft);
@@ -321,16 +321,16 @@ export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): Dea
     status = 'underpriced';
     badgeLabel = `Underpriced by ${amtText} (${diffPct}%)`;
     tone = 'green';
-    tier = 'Strong Value';
+    tier = 'Good Deal';
     argumentHeadline = `${amtText} (${Math.abs(diffPct)}%) below our $${estimatedFairPrice.toLocaleString()} Village comp benchmark.`;
-    argumentSummary = `Why we rate this underpriced: its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) trades meaningfully below the $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) warranted by ${laneTierLabel} land values, ${effectiveSqft.toLocaleString()} ft² of interior space, ${listing.lotAcres} acres${hasPool ? ', and an in-ground pool' : ''}. Buyers are effectively acquiring the structure and land at a ${Math.abs(diffPct)}% discount to comparable Incorporated Bellport Village closings.`;
+    argumentSummary = `Why we rate this a Good Deal (Underpriced): its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) trades meaningfully below the $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) warranted by ${laneTierLabel} land values, ${effectiveSqft.toLocaleString()} ft² of interior space, ${listing.lotAcres} acres${hasPool ? ', and an in-ground pool' : ''}. Buyers are effectively acquiring the structure and land at a ${Math.abs(diffPct)}% discount to comparable Incorporated Bellport Village closings.`;
   } else if (diffDollar >= 15_000) {
     status = 'overpriced';
     badgeLabel = `Overpriced by ${amtText} (+${diffPct}%)`;
     tone = diffPct >= 12 ? 'red' : 'yellow';
-    tier = diffPct >= 12 ? 'Overpriced' : 'Full Premium';
+    tier = 'Overpriced';
     argumentHeadline = `${amtText} (+${diffPct}%) above our $${estimatedFairPrice.toLocaleString()} Village comp benchmark.`;
-    argumentSummary = `Why we rate this overpriced: its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) asks a +${diffPct}% premium over our $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) comp benchmark for ${laneTierLabel} given ${effectiveSqft.toLocaleString()} ft² on ${listing.lotAcres} acres${hasPool ? ' with pool' : ' without an existing pool'}. Unless there is bespoke architectural pedigree or private bayfrontage beyond public specs, comparable Village homes trade closer to $${estimatedFairPrice.toLocaleString()}.`;
+    argumentSummary = `Why we rate this Overpriced: its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) asks a +${diffPct}% premium over our $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) comp benchmark for ${laneTierLabel} given ${effectiveSqft.toLocaleString()} ft² on ${listing.lotAcres} acres${hasPool ? ' with pool' : ' without an existing pool'}. Unless there is bespoke architectural pedigree or private bayfrontage beyond public specs, comparable Village homes trade closer to $${estimatedFairPrice.toLocaleString()}.`;
   }
 
   const score = Math.max(22, Math.min(97, Math.round(70 - deltaPct * 1.2)));

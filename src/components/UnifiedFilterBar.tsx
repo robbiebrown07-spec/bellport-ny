@@ -22,14 +22,6 @@ interface UnifiedFilterBarProps {
 
 type OpenMenu = 'status' | 'price' | 'size' | 'lot' | 'area' | 'streets' | 'feat' | null;
 
-const NL_SUGGESTIONS = [
-  'All white houses',
-  'Houses with large lawns',
-  'Shingled 4+ bed on Bellport Ln or Livingston with pool or room for pool',
-  '★ Perfect Fit below South Country Rd',
-  'Quiet streets walkable to shops with porch',
-];
-
 export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   filters,
   onChange,
@@ -204,125 +196,73 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 
   return (
     <div ref={barRef} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Natural Language House Search Bar */}
+      {/* Minimalist Search with Gemini Bar */}
       <div
         style={{
-          padding: '10px 14px',
-          borderRadius: 16,
+          padding: '8px 14px',
+          borderRadius: 999,
           background: 'var(--surface)',
           border: filters.nlQuery.trim() ? '1.5px solid var(--accent)' : '1px solid var(--line)',
           boxShadow: filters.nlQuery.trim() ? '0 2px 10px rgba(26,115,232,0.08)' : 'none',
           display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Sparkles size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <input
-            ref={searchInputRef}
-            type="search"
-            value={filters.nlQuery}
-            onChange={(e) => patch({ nlQuery: e.target.value, q: '' })}
-            placeholder='Search in plain English or by address — e.g. "all white houses", "houses with large lawns", or "shingled 4+ bed on Bellport Ln with pool or room for pool"'
-            style={{
-              flex: 1,
-              minWidth: 0,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              fontSize: 13.5,
-              color: 'var(--ink)',
-            }}
-          />
-          {filters.nlQuery && (
-            <button
-              type="button"
-              onClick={() => patch({ nlQuery: '' })}
-              aria-label="Clear natural language search"
-              style={{
-                border: 'none',
-                background: 'var(--surface-subtle)',
-                borderRadius: 999,
-                width: 24,
-                height: 24,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--ink-2)',
-              }}
-            >
-              <X size={13} />
-            </button>
-          )}
-        </div>
-
-        {parsedNl.active ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <Sparkles size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+        <input
+          ref={searchInputRef}
+          type="search"
+          value={filters.nlQuery}
+          onChange={(e) => patch({ nlQuery: e.target.value, q: '' })}
+          placeholder="Search with Gemini"
+          style={{
+            flex: '1 1 200px',
+            minWidth: 0,
+            height: 26,
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            fontSize: 13.5,
+            color: 'var(--ink)',
+          }}
+        />
+        {parsedNl.active &&
+          parsedNl.chips.map((c) => (
             <span
+              key={c}
               style={{
                 fontSize: 11,
-                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: 'var(--accent-soft)',
                 color: 'var(--accent)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
+                fontWeight: 500,
               }}
             >
-              Matched criteria:
+              {c}
             </span>
-            {parsedNl.chips.length > 0 ? (
-              parsedNl.chips.map((c) => (
-                <span
-                  key={c}
-                  style={{
-                    fontSize: 11.5,
-                    padding: '2px 9px',
-                    borderRadius: 999,
-                    background: 'var(--accent-soft)',
-                    color: 'var(--accent)',
-                    fontWeight: 500,
-                  }}
-                >
-                  {c}
-                </span>
-              ))
-            ) : (
-              <span style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
-                Matching description keywords across all Bellport Village homes
-              </span>
-            )}
-          </div>
-        ) : (
-          <div
+          ))}
+        {filters.nlQuery && (
+          <button
+            type="button"
+            onClick={() => patch({ nlQuery: '' })}
+            aria-label="Clear search"
             style={{
-              display: 'flex',
+              border: 'none',
+              background: 'var(--surface-subtle)',
+              borderRadius: 999,
+              width: 24,
+              height: 24,
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
-              overflowX: 'auto',
-              paddingBottom: 2,
+              justifyContent: 'center',
+              color: 'var(--ink-2)',
             }}
           >
-            <span style={{ fontSize: 11, color: 'var(--ink-muted)', flexShrink: 0 }}>Try:</span>
-            {NL_SUGGESTIONS.map((sug) => (
-              <button
-                key={sug}
-                type="button"
-                onClick={() => patch({ nlQuery: sug })}
-                style={{
-                  fontSize: 11.5,
-                  padding: '3px 10px',
-                  borderRadius: 999,
-                  border: '1px solid var(--line)',
-                  background: 'var(--surface-subtle)',
-                  color: 'var(--ink-2)',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {sug}
-              </button>
-            ))}
-          </div>
+            <X size={13} />
+          </button>
         )}
       </div>
 

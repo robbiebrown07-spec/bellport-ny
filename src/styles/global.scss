@@ -106,22 +106,23 @@ mark.kw-hit {
   font-weight: 500;
 }
 
-// Sticky Two-Zone TopBar (72px desktop, fluid auto-height stacked on mobile so text is never clipped)
+// Sticky Two-Zone TopBar in Signature Blue (#1a73e8) with White Typography
 .topbar {
   position: sticky;
   top: 0;
   z-index: 40;
   min-height: var(--topbar-h);
-  background: color-mix(in srgb, var(--bg) 95%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1a73e8 0%, #1765cc 100%);
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 2px 10px rgba(23, 101, 204, 0.18);
   transition:
     border-color var(--dur-fast) var(--ease-emphasized),
     box-shadow var(--dur-fast) var(--ease-emphasized);
 
   &.is-scrolled {
-    border-bottom-color: var(--line);
-    box-shadow: var(--shadow-1);
+    border-bottom-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 4px 16px rgba(15, 58, 125, 0.26);
   }
 
   &__inner {
@@ -152,7 +153,7 @@ mark.kw-hit {
   &__brand {
     display: inline-flex;
     align-items: center;
-    gap: 11px;
+    gap: 12px;
     min-width: 0;
     background: none;
     border: none;
@@ -162,18 +163,18 @@ mark.kw-hit {
 
   &__title {
     font-family: var(--font-display);
-    font-weight: 500;
-    font-size: 20px;
+    font-weight: 600;
+    font-size: 21px;
     line-height: 1.15;
     letter-spacing: -0.02em;
     white-space: nowrap;
-    color: var(--ink);
+    color: #ffffff;
   }
 
   &__subtitle {
     font-size: 12px;
     line-height: 1.25;
-    color: var(--ink-2);
+    color: rgba(255, 255, 255, 0.86);
     white-space: nowrap;
     margin-top: 2px;
   }
@@ -182,6 +183,37 @@ mark.kw-hit {
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  .segmented-tabs {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.24);
+
+    &__tab {
+      color: rgba(255, 255, 255, 0.9);
+
+      &:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      &.is-active {
+        background: #ffffff;
+        color: #1765cc;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(10, 35, 75, 0.18);
+      }
+    }
+  }
+
+  &__settings-btn {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: rgba(255, 255, 255, 0.26) !important;
+    color: #ffffff !important;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.25) !important;
+    }
   }
 
   &__settings-mobile {

@@ -1,4 +1,8 @@
 import type { Listing } from '../types';
+import {
+  classifyArchitecturalTaste,
+  evaluateArchitecturalBeauty,
+} from './ownerAndAirbnb';
 
 export type RobbieFitTier = 'perfect' | 'great' | 'good' | null;
 
@@ -25,15 +29,11 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
     ...listing.features.map((f) => f.toLowerCase()),
   ]);
 
-  // 1. Classic Shingled New England / Cape Cod style
-  const isShingledNewEngland =
-    feats.has('shingles') ||
-    /\b(shingle|shingled|cedar|cape\s*cod|\bcape\b|new\s+england|gambrel|coastal\s+cottage|clapboard\s+colonial)\b/i.test(
-      fullText
-    );
-  const isClassicColonial =
-    !isShingledNewEngland &&
-    (feats.has('arch') || /\b(colonial|greek\s+revival|victorian|traditional|farmhouse)\b/i.test(styleText));
+  // 1. Architectural Taste Calibration (Loved vs. OK vs. Ugly hard disqualifier)
+  const archTaste = classifyArchitecturalTaste(listing);
+  const beauty = evaluateArchitecturalBeauty(listing);
+  const isLovedArchitecture = archTaste.bucket === 'loved';
+  const isUglyArchitecture = archTaste.bucket === 'ugly';
 
   // 2. Beautiful, lush yard
   const hasLushYard =
@@ -82,7 +82,7 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
   const hasSecondStory =
     feats.has('second_floor') ||
     feats.has('second floor') ||
-    /\b(two[-\s]?story|2[-\s]?story|second\s+floor|second\s+story|upstairs|colonial|gambrel|victorian)\b/i.test(
+    /\b(two[-\s]?story|2[-\s]?story|second\s+floor|second\s+story|upstairs|colonial|gambrel|victorian|farmhouse|cape)\b/i.test(
       fullText
     );
   const hasBasement =
@@ -98,8 +98,13 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
 
   // Score calculation (0–100)
   let score = 0;
-  if (isShingledNewEngland) score += 27;
-  else if (isClassicColonial) score += 15;
+  if (isLovedArchitecture) {
+    score += beauty.score10 >= 9.0 ? 32 : 27;
+  } else if (archTaste.bucket === 'ok') {
+    score += 9; // Neutral/OK exterior gets minimal architectural points
+  } else {
+    score -= 35; // Hard architectural penalty for High Ranches, Split-Levels & Suburban Tract Colonials
+  }
 
   if (hasLushYard) score += 16;
 
@@ -115,54 +120,61 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
   if (hasOutdoorStructure) score += 14;
   if (listing.belowSC) score += 4;
 
-  score = Math.min(100, score);
+  score = Math.max(8, Math.min(100, score));
 
-  // Determine Fit Tier (Pool or Room for Pool is close to necessary -> required for Great & Perfect Fit!)
+  // Determine Fit Tier:
+  // STRICT RULE: Never recommend Good Fit (or Great/Perfect Fit) if Robbie will find the house unattractive or merely "OK".
+  // Only homes with Loved architectural character (isLovedArchitecture === true, beauty >= 8.1) can earn ANY Fit badge:
+  //   * Perfect Fit: Loved architecture (beauty >= 8.5) + poolReady + hasLushYard + score >= 76
+  //   * Great Fit: Loved architecture + poolReady + score >= 62
+  //   * Good Fit: Loved architecture + score >= 42 (architecturally charming historic/shingled homes, e.g. on smaller Village lots)
   let tier: RobbieFitTier = null;
   let badgeLabel = '';
 
-  if (poolReady && isShingledNewEngland && hasLushYard && score >= 78) {
-    tier = 'perfect';
-    badgeLabel = '★ Perfect Fit';
-  } else if (poolReady && (isShingledNewEngland || isClassicColonial) && score >= 63) {
-    tier = 'great';
-    badgeLabel = 'Great Fit';
-  } else if (score >= 48) {
-    tier = 'good';
-    badgeLabel = 'Good Fit';
+  if (isLovedArchitecture && !isUglyArchitecture) {
+    if (beauty.score10 >= 8.5 && poolReady && hasLushYard && score >= 76) {
+      tier = 'perfect';
+      badgeLabel = '★ Perfect Fit';
+    } else if (poolReady && score >= 62) {
+      tier = 'great';
+      badgeLabel = 'Great Fit';
+    } else if (score >= 42) {
+      tier = 'good';
+      badgeLabel = 'Good Fit';
+    }
   }
 
   const criteria: RobbieFitCriterion[] = [
     {
-      label: 'Classic Shingled New England / Cape Style',
-      met: isShingledNewEngland,
-      detail: isShingledNewEngland
-        ? `Matches (${listing.style})`
-        : isClassicColonial
-          ? `Classic Village vernacular (${listing.style})`
-          : `${listing.style}`,
+      label: 'Timeless Shingled Cape / Historic Village Architecture',
+      met: isLovedArchitecture,
+      detail: isLovedArchitecture
+        ? `Matches Robbie’s architectural taste (${beauty.display} · ${archTaste.reason})`
+        : isUglyArchitecture
+          ? `Disqualified (${beauty.display}): ${archTaste.reason}`
+          : `OK / Neutral exterior (${beauty.display}): ${archTaste.reason}`,
     },
     {
-      label: 'Pool or Room for a Pool (Essential)',
+      label: 'Pool or Room for a Pool (Essential for Great/Perfect Fit)',
       met: poolReady,
       detail: hasExistingPool
         ? 'Has existing in-ground pool'
         : hasRoomForPool
           ? `Room to add a pool (${listing.lotAcres} ac lot)`
-          : `Tight ${listing.lotAcres} ac lot with no current pool`,
+          : `Compact ${listing.lotAcres} ac lot with no current pool`,
     },
     {
       label: 'Beautiful, Lush Yard',
       met: hasLushYard,
       detail: hasLushYard
         ? `Landscaped ${listing.lotAcres}-acre Village grounds`
-        : `Compact ${listing.lotAcres}-acre lot`,
+        : `Smaller ${listing.lotAcres}-acre lot`,
     },
     {
-      label: 'ADU, Pool House, or Detached Studio',
+      label: 'ADU, Pool House, or Detached Barn / Studio',
       met: hasOutdoorStructure,
       detail: hasOutdoorStructure
-        ? 'Includes detached secondary structure / pool house / studio'
+        ? 'Includes detached secondary structure / barn / pool house'
         : 'Main residence only',
     },
     {
@@ -171,29 +183,35 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
         [hasFireplace, hasGoodBedrooms, hasSecondStory || hasBasement, hasTallCeilings, hasOpenFlow].filter(
           Boolean
         ).length >= 2,
-      detail: [
-        hasFireplace ? 'Fireplace' : null,
-        hasGoodBedrooms ? `Generous bedrooms (${listing.beds} bd / ${listing.sqft.toLocaleString()} ft²)` : null,
-        hasSecondStory ? 'Second story' : null,
-        hasBasement ? 'Basement' : null,
-        hasTallCeilings ? 'Tall ceilings' : null,
-        hasOpenFlow ? 'Open flow' : null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || 'Standard interior layout',
+      detail:
+        [
+          hasFireplace ? 'Fireplace' : null,
+          hasGoodBedrooms
+            ? `Generous bedrooms (${listing.beds} bd / ${listing.sqft.toLocaleString()} ft²)`
+            : null,
+          hasSecondStory ? 'Second story' : null,
+          hasBasement ? 'Basement' : null,
+          hasTallCeilings ? 'Tall ceilings' : null,
+          hasOpenFlow ? 'Open flow' : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || 'Standard interior layout',
     },
   ];
 
   const matchedHighlights = criteria.filter((c) => c.met).map((c) => c.label);
 
-  const summary =
-    tier === 'perfect'
-      ? `Checks virtually every box on Robbie’s wish list: classic shingled New England / Cape style, lush ${listing.lotAcres}-acre grounds, ${hasExistingPool ? 'an existing pool' : 'ample room for a pool'},${hasOutdoorStructure ? ' a detached outdoor structure,' : ''} and strong interior character.`
+  const summary = isUglyArchitecture
+    ? `Not a fit (${score}/100) — disqualified by exterior architecture (${archTaste.reason}).`
+    : tier === 'perfect'
+      ? `Checks virtually every box on Robbie’s wish list: ${archTaste.reason.toLowerCase()}, lush ${listing.lotAcres}-acre grounds, ${hasExistingPool ? 'an existing pool' : 'ample room for a pool'},${hasOutdoorStructure ? ' a detached outdoor structure,' : ''} and strong interior character.`
       : tier === 'great'
-        ? `Strong match for a family vacation house with ${hasExistingPool ? 'an in-ground pool' : 'room for a pool'}, ${hasLushYard ? `a lush ${listing.lotAcres}-acre yard` : `${listing.lotAcres} acres`}, and classic Bellport Village architecture.`
+        ? `Strong architectural & property match (${beauty.display} beauty) with ${hasExistingPool ? 'an in-ground pool' : 'room for a pool'} and ${hasLushYard ? `a lush ${listing.lotAcres}-acre yard` : `${listing.lotAcres} acres`}.`
         : tier === 'good'
-          ? `Solid contender hitting several core priorities (${matchedHighlights.slice(0, 3).join(', ')}), though missing one or two top wish-list elements.`
-          : `Partial match (${score}/100) — differs from Robbie’s core shingled Cape / lush-yard / pool-ready profile.`;
+          ? isLovedArchitecture
+            ? `Architecturally right in Robbie’s wheelhouse (${beauty.display}), though on a smaller ${listing.lotAcres}-acre lot without room for a pool.`
+            : `Included as a Good Fit for its ${listing.lotAcres}-acre grounds and ${hasExistingPool ? 'existing pool' : 'pool potential'}, though the ${listing.yearBuilt} exterior is more neutral/OK (${beauty.display}) than classic shingled New England.`
+          : `Not tagged as a Fit (${score}/100) — exterior is ${archTaste.bucket === 'ok' ? `neutral/OK (${beauty.display}) without compensating estate grounds/pool` : 'outside Robbie’s target profile'}.`;
 
   return {
     score,
