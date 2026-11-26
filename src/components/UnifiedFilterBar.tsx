@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, RotateCcw, Sparkles, X } from 'lucide-react';
 import {
   BEAUTIFUL_STREET_OPTIONS,
@@ -22,6 +23,65 @@ interface UnifiedFilterBarProps {
 
 type OpenMenu = 'status' | 'price' | 'size' | 'lot' | 'area' | 'streets' | 'feat' | null;
 
+interface FilterPopoverProps {
+  wide?: boolean;
+  alignRight?: boolean;
+  isMobile: boolean;
+  popoverRef: React.RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+const FilterPopover: React.FC<FilterPopoverProps> = ({
+  wide,
+  alignRight,
+  isMobile,
+  popoverRef,
+  onClose,
+  children,
+}) => {
+  if (isMobile && typeof document !== 'undefined') {
+    return createPortal(
+      <>
+        <div className="filter-mobile-backdrop" onClick={onClose} aria-hidden="true" />
+        <div
+          ref={popoverRef}
+          role="dialog"
+          aria-modal="true"
+          className="filter-popover filter-popover--mobile-sheet"
+        >
+          {children}
+          <div className="filter-popover__mobile-done">
+            <button
+              type="button"
+              className="icon-btn icon-btn--primary"
+              onClick={onClose}
+              style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </>,
+      document.body
+    );
+  }
+
+  const cls = [
+    'filter-popover',
+    wide ? 'filter-popover--wide' : '',
+    alignRight ? 'filter-popover--right' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div ref={popoverRef} className={cls}>
+      {children}
+    </div>
+  );
+};
+
 export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   filters,
   onChange,
@@ -29,6 +89,9 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   searchInputRef,
 }) => {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 700 : false
+  );
   const [minPriceDraft, setMinPriceDraft] = useState<string>(() =>
     filters.minPrice !== null ? String(filters.minPrice) : ''
   );
@@ -36,6 +99,15 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     filters.maxPrice !== null ? String(filters.maxPrice) : ''
   );
   const barRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 700px)');
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   const openOrToggleMenu = (menu: Exclude<OpenMenu, null>) => {
     if (menu === 'price' && openMenu !== 'price') {
@@ -47,20 +119,20 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 
   useEffect(() => {
     if (!openMenu) return;
-    const onOutside = (e: MouseEvent | TouchEvent) => {
-      if (barRef.current && !barRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+    const onOutside = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (barRef.current?.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      setOpenMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenMenu(null);
     };
-    document.addEventListener('mousedown', onOutside);
-    document.addEventListener('touchstart', onOutside);
+    document.addEventListener('pointerdown', onOutside);
     window.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onOutside);
-      document.removeEventListener('touchstart', onOutside);
+      document.removeEventListener('pointerdown', onOutside);
       window.removeEventListener('keydown', onKey);
     };
   }, [openMenu]);
@@ -303,7 +375,11 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'status' && (
-              <div className="filter-popover">
+              <FilterPopover
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Property Status
@@ -591,7 +667,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     ))}
                   </div>
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -606,7 +682,11 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'price' && (
-              <div className="filter-popover">
+              <FilterPopover
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Price Range ($)
@@ -689,7 +769,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     </button>
                   ))}
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -704,7 +784,12 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'size' && (
-              <div className="filter-popover filter-popover--wide">
+              <FilterPopover
+                wide
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Home Size
@@ -736,6 +821,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       max={12}
                       style={inputStyle}
@@ -747,6 +833,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     />
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       max={12}
                       style={inputStyle}
@@ -766,6 +853,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.5"
                       min={0}
                       max={12}
@@ -778,6 +866,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     />
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.5"
                       min={0}
                       max={12}
@@ -798,6 +887,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <input
                       type="number"
+                      inputMode="numeric"
                       step={100}
                       style={inputStyle}
                       placeholder="Low sq ft"
@@ -808,6 +898,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     />
                     <input
                       type="number"
+                      inputMode="numeric"
                       step={100}
                       style={inputStyle}
                       placeholder="High sq ft"
@@ -818,7 +909,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     />
                   </div>
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -833,7 +924,11 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'lot' && (
-              <div className="filter-popover">
+              <FilterPopover
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Lot Size (Acres)
@@ -853,6 +948,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>Low (ac)</label>
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.05"
                       style={inputStyle}
                       placeholder="No min"
@@ -866,6 +962,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>High (ac)</label>
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.05"
                       style={inputStyle}
                       placeholder="No max"
@@ -895,7 +992,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     </button>
                   ))}
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -910,7 +1007,12 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'streets' && (
-              <div className="filter-popover filter-popover--wide">
+              <FilterPopover
+                wide
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Most Beautiful Streets & Sections
@@ -971,7 +1073,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 4,
-                    maxHeight: 300,
+                    maxHeight: 280,
                     overflowY: 'auto',
                   }}
                 >
@@ -1004,7 +1106,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     );
                   })}
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -1019,7 +1121,13 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'area' && (
-              <div className="filter-popover filter-popover--wide">
+              <FilterPopover
+                wide
+                alignRight
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Village Areas (100% Coverage)
@@ -1094,7 +1202,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     );
                   })}
                 </div>
-              </div>
+              </FilterPopover>
             )}
           </div>
 
@@ -1109,7 +1217,13 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               <ChevronDown size={13} />
             </button>
             {openMenu === 'feat' && (
-              <div className="filter-popover filter-popover--wide">
+              <FilterPopover
+                wide
+                alignRight
+                isMobile={isMobile}
+                popoverRef={popoverRef}
+                onClose={() => setOpenMenu(null)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                     Pool, Grounds & Architecture
@@ -1226,7 +1340,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     })}
                   </div>
                 ))}
-              </div>
+              </FilterPopover>
             )}
           </div>
 
