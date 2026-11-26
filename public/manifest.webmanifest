@@ -1,17 +1,25 @@
 {
-  "name": "Bellport Watch — Bellport Village Real Estate Tracker",
+  "name": "Bellport Watch",
   "short_name": "Bellport Watch",
-  "description": "Personal second-home listing tracker, filter explorer, and keyword search for Bellport Village, NY.",
-  "start_url": "/",
+  "description": "Robbie’s search for a family vacation house in Incorporated Bellport Village, NY (11713).",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1a73e8",
+  "orientation": "portrait-primary",
+  "background_color": "#0f2537",
+  "theme_color": "#0f2537",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f8f9fa'/%3E%3Cpath d='M6 17 L16 7 L26 17 Z' fill='%23ea4335'/%3E%3Crect x='9' y='17' width='14' height='9' rx='2' fill='%234285f4'/%3E%3Ccircle cx='24' cy='9' r='3.2' fill='%23fbbc04'/%3E%3Cpath d='M5 26 Q16 22 27 26 L27 28 L5 28 Z' fill='%2334a853'/%3E%3C/svg%3E",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

@@ -27,7 +27,9 @@ interface FavoritesAndTasteViewProps {
   catalog: UnifiedHome[];
   allListings: Listing[];
   tasteFilters: UnifiedFilters;
+  idealSearchNotes: string;
   onChangeTasteFilters: (next: UnifiedFilters) => void;
+  onChangeIdealSearchNotes: (next: string) => void;
   onApplyToMap: (next: UnifiedFilters) => void;
   onOpenListing: (id: string) => void;
   onToggleFavorite: (id: string) => void;
@@ -45,7 +47,9 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
   catalog,
   allListings,
   tasteFilters,
+  idealSearchNotes,
   onChangeTasteFilters,
+  onChangeIdealSearchNotes,
   onApplyToMap,
   onOpenListing,
   onToggleFavorite,
@@ -290,32 +294,83 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
               )}
             </p>
 
-            {/* Full Interactive Dropdowns & Checkable Feature Buttons (Matching Map Tab) */}
+            {/* Full Interactive Dropdowns, Checkable Feature Buttons & Persistent Ideal Search Notes */}
             <div
               style={{
                 paddingTop: 12,
                 borderTop: '1px solid var(--line)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 8,
+                gap: 10,
               }}
             >
-              <span
+              <div
                 style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: 'var(--ink-2)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  flexWrap: 'wrap',
                 }}
               >
-                Refine Your Taste Profile Criteria (Price, Size, Lot, Streets, Area &amp; Features)
-              </span>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: 'var(--ink-2)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Refine Your Taste Profile Criteria (Price, Size, Lot, Streets, Area &amp; Features)
+                </span>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: '#188038',
+                  }}
+                >
+                  ✓ Auto-saved automatically
+                </span>
+              </div>
               <UnifiedFilterBar
                 filters={tasteFilters}
                 onChange={onChangeTasteFilters}
                 context="map"
               />
+              <div style={{ marginTop: 4 }}>
+                <label
+                  htmlFor="ideal-search-notes"
+                  style={{
+                    display: 'block',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--ink-2)',
+                    marginBottom: 5,
+                  }}
+                >
+                  Ideal Search Notes &amp; Priorities
+                </label>
+                <textarea
+                  id="ideal-search-notes"
+                  rows={2}
+                  value={idealSearchNotes}
+                  onChange={(e) => onChangeIdealSearchNotes(e.target.value)}
+                  placeholder="Write anything else about your ideal Bellport house (e.g., weathered cedar shingles, heated pool or sunny yard for one, detached studio/pool house, quiet lane south of Main St)..."
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 10,
+                    border: '1px solid var(--line-strong)',
+                    background: '#ffffff',
+                    color: 'var(--ink)',
+                    fontSize: 13.5,
+                    lineHeight: 1.5,
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
             </div>
           </div>
         </ScrollReveal>

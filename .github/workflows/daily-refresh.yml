@@ -1,0 +1,65 @@
+name: Daily Bellport Watch Refresh
+
+on:
+  schedule:
+    # Runs automatically every morning at 11:00 UTC (7:00 AM EDT / 6:00 AM EST)
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bellport-daily-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh Bellport Village listings
+        env:
+          REALTYAPI_KEY: ${{ secrets.REALTYAPI_KEY }}
+        run: npm run refresh:daily
+
+      - name: Commit updated listing data to main
+        run: |
+          git config user.name "Bellport Watch Bot"
+          git config user.email "actions@github.com"
+          git add public/data/seed-listings.json public/data/bellport-parcels.json public/data/sync-status.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(data): daily Bellport Village listing refresh ($(date -u +%Y-%m-%d))"
+            git push origin main
+          fi
+
+      - name: Build production static bundle
+        run: |
+          npx vite build --base=/bellport-ny/
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - name: Deploy fresh build to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git -C dist init
+          git -C dist config user.name "Bellport Watch Bot"
+          git -C dist config user.email "actions@github.com"
+          git -C dist checkout -B gh-pages
+          git -C dist add -A
+          git -C dist commit -m "deploy: daily Bellport Watch refresh ($(date -u +%Y-%m-%d))"
+          git -C dist push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages:gh-pages

@@ -348,7 +348,11 @@ export interface PersistedAppState {
   listings: Listing[];
   savedParcelIds?: Record<string, boolean>;
   hiddenParcelIds?: Record<string, boolean>;
+  parcelNotes?: Record<string, string>;
+  parcelStatuses?: Record<string, UserTrackStatus>;
+  activeFilters?: Record<string, unknown>;
   tasteFilters?: Record<string, unknown>;
+  idealSearchNotes?: string;
   streetAlerts?: StreetAlertRule[];
   emailAlerts?: EmailAlertRule[];
   aiTasteMemo?: {

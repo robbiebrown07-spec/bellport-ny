@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Download, RotateCcw, Trash2, Upload, X } from 'lucide-react';
-import type { PersistedAppState } from '../types';
+import { Download, RefreshCw, RotateCcw, Trash2, Upload, X } from 'lucide-react';
+import type { PersistedAppState, SyncMetadata } from '../types';
 import {
   exportListingsAsCsv,
   exportStateAsJson,
@@ -10,8 +10,10 @@ import {
 interface SettingsDrawerProps {
   open: boolean;
   state: PersistedAppState;
+  syncMeta: SyncMetadata;
   hasSampleData: boolean;
   onClose: () => void;
+  onRefreshNow: () => Promise<void>;
   onImportState: (next: PersistedAppState) => void;
   onClearSampleData: () => void;
   onRestoreSeedData: () => void;
@@ -22,8 +24,10 @@ interface SettingsDrawerProps {
 export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   open,
   state,
+  syncMeta,
   hasSampleData,
   onClose,
+  onRefreshNow,
   onImportState,
   onClearSampleData,
   onRestoreSeedData,
@@ -31,8 +35,23 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   onTogglePrivacy,
 }) => {
   const [importError, setImportError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
   if (!open) return null;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      await onRefreshNow();
+      setRefreshMsg('Updated with latest Bellport Village listings (your saved homes & notes are preserved).');
+    } catch {
+      setRefreshMsg('Could not reach update feed — using locally saved data.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,6 +67,15 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     }
   };
 
+  const formattedSyncTime = syncMeta.lastSyncAt
+    ? new Date(syncMeta.lastSyncAt).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : 'Today';
+
   return (
     <div
       className="backdrop"
@@ -61,7 +89,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       <div className="drawer" style={{ width: 'min(460px, 100vw)' }}>
         <div className="drawer__header">
           <h2 id="settings-drawer-title" style={{ fontSize: 20 }}>
-            Settings & Data Ownership
+            Settings &amp; Daily Sync
           </h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close settings">
             <X size={16} />
@@ -69,6 +97,38 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         </div>
 
         <div className="drawer__body">
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              background: 'var(--surface-subtle)',
+              border: '1px solid var(--line)',
+            }}
+          >
+            <h3 style={{ fontSize: 15, marginBottom: 4 }}>Daily Listing Refresh</h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 10 }}>
+              Bellport Watch refreshes automatically every morning at <strong>7:00 AM ET</strong> and
+              syncs new listings &amp; price cuts whenever you open the app — while preserving your
+              saved homes, downvotes, notes, and ideal search settings.
+            </p>
+            <div style={{ fontSize: 12, color: 'var(--ink-2)', marginBottom: 10 }}>
+              Last feed check: <strong>{formattedSyncTime}</strong>
+              {syncMeta.lastSyncSummary ? ` · ${syncMeta.lastSyncSummary}` : ''}
+            </div>
+            <button
+              type="button"
+              className="icon-btn icon-btn--primary"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw size={14} />
+              <span>{refreshing ? 'Checking for Updates…' : 'Refresh Listings Now'}</span>
+            </button>
+            {refreshMsg && (
+              <p style={{ fontSize: 12.5, color: '#188038', marginTop: 8 }}>{refreshMsg}</p>
+            )}
+          </div>
+
           <div>
             <h3 style={{ fontSize: 15, marginBottom: 8 }}>Preferences</h3>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

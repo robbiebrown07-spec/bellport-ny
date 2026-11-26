@@ -3,6 +3,7 @@ import type {
   BellportMicroArea,
   HistoricalSaleRecord,
   Listing,
+  UserTrackStatus,
   VillageParcel,
 } from '../types';
 import { evaluateGoodDeal } from './intelligence';
@@ -291,6 +292,8 @@ export interface UnifiedHome {
   archetype: ArchetypeIllustration;
   isFavorite: boolean;
   isHidden: boolean;
+  personalNotes: string;
+  userStatus: UserTrackStatus;
   lat: number;
   lon: number;
   owner?: string | null;
@@ -304,7 +307,9 @@ export function buildUnifiedVillageCatalog(
   listings: Listing[],
   sales: HistoricalSaleRecord[],
   parcelFavorites: Record<string, boolean> = {},
-  parcelHidden: Record<string, boolean> = {}
+  parcelHidden: Record<string, boolean> = {},
+  parcelNotes: Record<string, string> = {},
+  parcelStatuses: Record<string, UserTrackStatus> = {}
 ): UnifiedHome[] {
   const listingsById = new Map(listings.map((l) => [l.id, l]));
   const salesByPid = new Map<string, HistoricalSaleRecord>();
@@ -347,6 +352,27 @@ export function buildUnifiedVillageCatalog(
     const isHidden = Boolean(
       parcelHidden[p.id] || (linked?.id ? parcelHidden[linked.id] : false)
     );
+    const explicitFav =
+      parcelFavorites[p.id] !== undefined
+        ? parcelFavorites[p.id]
+        : linked?.id && parcelFavorites[linked.id] !== undefined
+          ? parcelFavorites[linked.id]
+          : undefined;
+    const isFavorite =
+      !isHidden && (explicitFav !== undefined ? Boolean(explicitFav) : Boolean(linked?.isFavorite));
+
+    const personalNotes =
+      parcelNotes[p.id] !== undefined
+        ? parcelNotes[p.id]
+        : linked?.id && parcelNotes[linked.id] !== undefined
+          ? parcelNotes[linked.id]
+          : (linked?.personalNotes ?? '');
+
+    const userStatus: UserTrackStatus =
+      parcelStatuses[p.id] ??
+      (linked?.id ? parcelStatuses[linked.id] : undefined) ??
+      linked?.userStatus ??
+      'unreviewed';
 
     catalog.push({
       uid: linked?.id ?? p.id,
@@ -405,9 +431,10 @@ export function buildUnifiedVillageCatalog(
       archetype:
         linked?.archetype ??
         (p.waterfront ? 'bayfront' : p.pool ? 'shingle-pool' : 'colonial'),
-      isFavorite:
-        !isHidden && (linked ? Boolean(linked.isFavorite) : Boolean(parcelFavorites[p.id])),
+      isFavorite,
       isHidden,
+      personalNotes,
+      userStatus,
       lat: p.lat,
       lon: p.lon,
       owner: p.owner,
@@ -420,7 +447,14 @@ export function buildUnifiedVillageCatalog(
 }
 
 export function toPseudoListing(h: UnifiedHome): Listing {
-  if (h.listingRef) return h.listingRef;
+  if (h.listingRef) {
+    return {
+      ...h.listingRef,
+      isFavorite: h.isFavorite,
+      personalNotes: h.personalNotes,
+      userStatus: h.userStatus,
+    };
+  }
   return {
     id: h.parcelId,
     address: h.address,
@@ -430,7 +464,7 @@ export function toPseudoListing(h: UnifiedHome): Listing {
     latitude: h.lat,
     longitude: h.lon,
     marketStatus: h.isForSale ? 'active' : h.hasPastSale ? 'sold' : 'off-market',
-    userStatus: 'unreviewed',
+    userStatus: h.userStatus,
     isFavorite: h.isFavorite,
     price: h.price,
     soldPrice: h.soldPrice ?? undefined,
@@ -457,7 +491,7 @@ export function toPseudoListing(h: UnifiedHome): Listing {
     features: h.feats.map((fk) => DESIGN_FEATURE_LABELS[fk] ?? fk),
     feats: h.feats,
     brokerage: 'Bellport Village Public Roll',
-    personalNotes: '',
+    personalNotes: h.personalNotes,
     photos: h.photos,
     photoUrl: h.photoUrl,
   };

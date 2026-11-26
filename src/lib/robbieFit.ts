@@ -122,27 +122,10 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
 
   score = Math.max(8, Math.min(100, score));
 
-  // Determine Fit Tier:
-  // STRICT RULE: Never recommend Good Fit (or Great/Perfect Fit) if Robbie will find the house unattractive or merely "OK".
-  // Only homes with Loved architectural character (isLovedArchitecture === true, beauty >= 8.1) can earn ANY Fit badge:
-  //   * Perfect Fit: Loved architecture (beauty >= 8.5) + poolReady + hasLushYard + score >= 76
-  //   * Great Fit: Loved architecture + poolReady + score >= 62
-  //   * Good Fit: Loved architecture + score >= 42 (architecturally charming historic/shingled homes, e.g. on smaller Village lots)
-  let tier: RobbieFitTier = null;
-  let badgeLabel = '';
-
-  if (isLovedArchitecture && !isUglyArchitecture) {
-    if (beauty.score10 >= 8.5 && poolReady && hasLushYard && score >= 76) {
-      tier = 'perfect';
-      badgeLabel = '★ Perfect Fit';
-    } else if (poolReady && score >= 62) {
-      tier = 'great';
-      badgeLabel = 'Great Fit';
-    } else if (score >= 42) {
-      tier = 'good';
-      badgeLabel = 'Good Fit';
-    }
-  }
+  const interiorMet =
+    [hasFireplace, hasGoodBedrooms, hasSecondStory || hasBasement, hasTallCeilings, hasOpenFlow].filter(
+      Boolean
+    ).length >= 2;
 
   const criteria: RobbieFitCriterion[] = [
     {
@@ -179,10 +162,7 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
     },
     {
       label: 'Interior Plusses (Fireplace, Bedrooms, 2nd Story/Basement, Ceilings, Flow)',
-      met:
-        [hasFireplace, hasGoodBedrooms, hasSecondStory || hasBasement, hasTallCeilings, hasOpenFlow].filter(
-          Boolean
-        ).length >= 2,
+      met: interiorMet,
       detail:
         [
           hasFireplace ? 'Fireplace' : null,
@@ -199,19 +179,37 @@ export function evaluateRobbieFit(listing: Listing): RobbieFitEvaluation {
     },
   ];
 
+  // STRICT RULE:
+  // 1. Never recommend Good Fit, Great Fit, or Perfect Fit if Robbie will find the house unattractive or merely "OK".
+  // 2. ONLY award ★ Perfect Fit when EVERY SINGLE criterion in `criteria` is met (`allCriteriaMet === true`)!
+  const allCriteriaMet = criteria.every((c) => c.met);
+  let tier: RobbieFitTier = null;
+  let badgeLabel = '';
+
+  if (isLovedArchitecture && !isUglyArchitecture) {
+    if (allCriteriaMet && beauty.score10 >= 8.5) {
+      tier = 'perfect';
+      badgeLabel = '★ Perfect Fit';
+    } else if (poolReady && score >= 62) {
+      tier = 'great';
+      badgeLabel = 'Great Fit';
+    } else if (score >= 42) {
+      tier = 'good';
+      badgeLabel = 'Good Fit';
+    }
+  }
+
   const matchedHighlights = criteria.filter((c) => c.met).map((c) => c.label);
 
   const summary = isUglyArchitecture
     ? `Not a fit (${score}/100) — disqualified by exterior architecture (${archTaste.reason}).`
     : tier === 'perfect'
-      ? `Checks virtually every box on Robbie’s wish list: ${archTaste.reason.toLowerCase()}, lush ${listing.lotAcres}-acre grounds, ${hasExistingPool ? 'an existing pool' : 'ample room for a pool'},${hasOutdoorStructure ? ' a detached outdoor structure,' : ''} and strong interior character.`
+      ? `Meets every single criterion on Robbie’s wish list: ${archTaste.reason.toLowerCase()}, lush ${listing.lotAcres}-acre grounds, ${hasExistingPool ? 'an existing pool' : 'ample room for a pool'}, a detached outdoor structure, and strong interior character.`
       : tier === 'great'
         ? `Strong architectural & property match (${beauty.display} beauty) with ${hasExistingPool ? 'an in-ground pool' : 'room for a pool'} and ${hasLushYard ? `a lush ${listing.lotAcres}-acre yard` : `${listing.lotAcres} acres`}.`
         : tier === 'good'
-          ? isLovedArchitecture
-            ? `Architecturally right in Robbie’s wheelhouse (${beauty.display}), though on a smaller ${listing.lotAcres}-acre lot without room for a pool.`
-            : `Included as a Good Fit for its ${listing.lotAcres}-acre grounds and ${hasExistingPool ? 'existing pool' : 'pool potential'}, though the ${listing.yearBuilt} exterior is more neutral/OK (${beauty.display}) than classic shingled New England.`
-          : `Not tagged as a Fit (${score}/100) — exterior is ${archTaste.bucket === 'ok' ? `neutral/OK (${beauty.display}) without compensating estate grounds/pool` : 'outside Robbie’s target profile'}.`;
+          ? `Architecturally right in Robbie’s wheelhouse (${beauty.display}), though missing one or more compound/pool criteria.`
+          : `Not tagged as a Fit (${score}/100) — exterior is ${archTaste.bucket === 'ok' ? `neutral/OK (${beauty.display}) without classic shingled character` : 'outside Robbie’s target profile'}.`;
 
   return {
     score,

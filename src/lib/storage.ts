@@ -58,10 +58,29 @@ async function writeIdb(state: PersistedAppState): Promise<void> {
   }
 }
 
-export async function fetchSeedListings(): Promise<Listing[]> {
+function normalizeAddrKey(addr: string): string {
+  return addr
+    .toLowerCase()
+    .replace(/,?\s*bellport(\s+village)?.*$/i, '')
+    .replace(/\broad\b/g, 'rd')
+    .replace(/\blane\b/g, 'ln')
+    .replace(/\bstreet\b/g, 'st')
+    .replace(/\bdrive\b/g, 'dr')
+    .replace(/\bavenue\b/g, 'ave')
+    .replace(/\bsouth\b/g, 's')
+    .replace(/\bnorth\b/g, 'n')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function getBasePrefix(): string {
   const base = import.meta.env.BASE_URL || '/';
-  const prefix = base.endsWith('/') ? base : `${base}/`;
-  const res = await fetch(`${prefix}data/seed-listings.json`, { cache: 'no-cache' });
+  return base.endsWith('/') ? base : `${base}/`;
+}
+
+export async function fetchSeedListings(bustCache = false): Promise<Listing[]> {
+  const prefix = getBasePrefix();
+  const qs = bustCache ? `?t=${Math.floor(Date.now() / 60_000)}` : '';
+  const res = await fetch(`${prefix}data/seed-listings.json${qs}`, { cache: 'no-store' });
   if (!res.ok) {
     throw new Error(`Failed to fetch seed listings (${res.status})`);
   }
@@ -78,6 +97,67 @@ export async function fetchSeedListings(): Promise<Listing[]> {
   }));
 }
 
+export async function fetchRemoteSyncStatus(): Promise<Partial<SyncMetadata>> {
+  try {
+    const prefix = getBasePrefix();
+    const res = await fetch(`${prefix}data/sync-status.json?t=${Math.floor(Date.now() / 60_000)}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return {};
+    const data = (await res.json()) as { lastSyncAt?: string; lastSyncSummary?: string };
+    return {
+      lastSyncAt: data.lastSyncAt,
+      lastSyncSummary: data.lastSyncSummary,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Merges daily-refreshed remote seed listings into the user's saved listings
+ * while 100% preserving user favorites, notes, statuses, and custom entries.
+ */
+export function mergeRemoteSeedListings(existing: Listing[], remoteSeed: Listing[]): Listing[] {
+  if (remoteSeed.length === 0) return existing;
+
+  const byId = new Map<string, Listing>();
+  const byAddr = new Map<string, Listing>();
+  for (const item of existing) {
+    byId.set(item.id, item);
+    byAddr.set(normalizeAddrKey(item.address), item);
+  }
+
+  const matchedIds = new Set<string>();
+  const merged: Listing[] = [];
+
+  for (const inc of remoteSeed) {
+    const prev = byId.get(inc.id) ?? byAddr.get(normalizeAddrKey(inc.address));
+    if (prev) {
+      matchedIds.add(prev.id);
+      merged.push({
+        ...prev,
+        ...inc,
+        id: prev.id,
+        // Strictly preserve all user-owned fields!
+        isFavorite: prev.isFavorite,
+        userStatus: prev.userStatus,
+        personalNotes: prev.personalNotes || inc.personalNotes,
+      });
+    } else {
+      merged.push(inc);
+    }
+  }
+
+  for (const old of existing) {
+    if (!matchedIds.has(old.id)) {
+      merged.push(old);
+    }
+  }
+
+  return merged;
+}
+
 export interface BootstrapPayload {
   state: PersistedAppState;
   syncMeta: SyncMetadata;
@@ -85,26 +165,26 @@ export interface BootstrapPayload {
 
 /**
  * Single-round-trip bootstrap from /api/bootstrap with graceful fallback
- * to local IndexedDB / static seed JSON if offline or hosted statically.
+ * to local IndexedDB / localStorage merged with fresh daily seed JSON.
  */
 export async function loadBootstrap(): Promise<BootstrapPayload> {
   try {
     const res = await fetch('/api/bootstrap', { cache: 'no-store' });
     if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const payload = (await res.json()) as BootstrapPayload;
+      saveStateSyncMirror(payload.state);
       await writeIdb(payload.state);
       return payload;
     }
   } catch {
-    // Fall through to local IndexedDB fallback
+    // Fall through to static / local IndexedDB + localStorage mode
   }
 
+  // Prefer the newest timestamp between localStorage (synchronous 0ms mirror) and IndexedDB
+  let savedState: PersistedAppState | null = null;
   const fromIdb = await readIdb();
   if (fromIdb && fromIdb.schemaVersion === SCHEMA_VERSION && Array.isArray(fromIdb.listings)) {
-    return {
-      state: fromIdb,
-      syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
-    };
+    savedState = fromIdb;
   }
 
   try {
@@ -112,17 +192,48 @@ export async function loadBootstrap(): Promise<BootstrapPayload> {
     if (raw) {
       const parsed = JSON.parse(raw) as PersistedAppState;
       if (parsed.schemaVersion === SCHEMA_VERSION && Array.isArray(parsed.listings)) {
-        return {
-          state: parsed,
-          syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
-        };
+        if (!savedState || (parsed.updatedAt ?? '') >= (savedState.updatedAt ?? '')) {
+          savedState = parsed;
+        }
       }
     }
   } catch {
     // Ignore corrupt localStorage
   }
 
-  const seedListings = await fetchSeedListings();
+  const remoteStatus = await fetchRemoteSyncStatus();
+
+  if (savedState) {
+    try {
+      const freshSeed = await fetchSeedListings(true);
+      const mergedListings = mergeRemoteSeedListings(savedState.listings, freshSeed);
+      const hydrated: PersistedAppState = {
+        ...savedState,
+        listings: mergedListings,
+      };
+      saveStateSyncMirror(hydrated);
+      await writeIdb(hydrated);
+      return {
+        state: hydrated,
+        syncMeta: {
+          apiConfigured: false,
+          cachedDetailsCount: mergedListings.length,
+          ...remoteStatus,
+        },
+      };
+    } catch {
+      return {
+        state: savedState,
+        syncMeta: {
+          apiConfigured: false,
+          cachedDetailsCount: savedState.listings.length,
+          ...remoteStatus,
+        },
+      };
+    }
+  }
+
+  const seedListings = await fetchSeedListings(true);
 
   const initial: PersistedAppState = {
     schemaVersion: SCHEMA_VERSION,
@@ -164,11 +275,19 @@ export async function loadBootstrap(): Promise<BootstrapPayload> {
   await saveState(initial);
   return {
     state: initial,
-    syncMeta: { apiConfigured: false, cachedDetailsCount: 0 },
+    syncMeta: {
+      apiConfigured: false,
+      cachedDetailsCount: seedListings.length,
+      ...remoteStatus,
+    },
   };
 }
 
-export async function saveState(state: PersistedAppState): Promise<void> {
+/**
+ * Synchronous 0ms write to localStorage so favorites, downvotes, and ideal search
+ * updates are saved immediately even if the user closes/refreshes right away.
+ */
+export function saveStateSyncMirror(state: PersistedAppState): PersistedAppState {
   const stamped: PersistedAppState = {
     ...state,
     schemaVersion: SCHEMA_VERSION,
@@ -179,6 +298,11 @@ export async function saveState(state: PersistedAppState): Promise<void> {
   } catch {
     // Ignore quota error
   }
+  return stamped;
+}
+
+export async function saveState(state: PersistedAppState): Promise<void> {
+  const stamped = saveStateSyncMirror(state);
   await writeIdb(stamped);
   try {
     await fetch('/api/state', {
@@ -187,8 +311,30 @@ export async function saveState(state: PersistedAppState): Promise<void> {
       body: JSON.stringify(stamped),
     });
   } catch {
-    // Offline or static-only mode; local IndexedDB still holds latest state
+    // Offline or static-only mode; localStorage + IndexedDB hold latest state
   }
+}
+
+export async function refreshFromRemoteSeed(
+  currentState: PersistedAppState
+): Promise<{ state: PersistedAppState; syncMeta: SyncMetadata }> {
+  const [freshSeed, remoteStatus] = await Promise.all([
+    fetchSeedListings(true),
+    fetchRemoteSyncStatus(),
+  ]);
+  const nextState: PersistedAppState = {
+    ...currentState,
+    listings: mergeRemoteSeedListings(currentState.listings, freshSeed),
+  };
+  await saveState(nextState);
+  return {
+    state: nextState,
+    syncMeta: {
+      apiConfigured: false,
+      cachedDetailsCount: nextState.listings.length,
+      ...remoteStatus,
+    },
+  };
 }
 
 export async function saveRealtyApiKey(apiKey: string): Promise<SyncMetadata> {

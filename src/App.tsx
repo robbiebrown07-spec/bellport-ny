@@ -11,7 +11,12 @@ import type {
   SyncMetadata,
   VillageParcelsBundle,
 } from './types';
-import { fetchSeedListings, loadBootstrap, saveState } from './lib/storage';
+import {
+  loadBootstrap,
+  refreshFromRemoteSeed,
+  saveState,
+  saveStateSyncMirror,
+} from './lib/storage';
 import { evaluateGoodDeal } from './lib/intelligence';
 import { evaluateRobbieFit } from './lib/robbieFit';
 import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
@@ -51,7 +56,6 @@ export const App: React.FC = () => {
   const [parcelsBundle, setParcelsBundle] = useState<VillageParcelsBundle | null>(null);
   const [salesHistory, setSalesHistory] = useState<HistoricalSaleRecord[]>([]);
   const [activeView, setActiveView] = useState<PrimaryView>('map');
-  const [unifiedFilters, setUnifiedFilters] = useState<UnifiedFilters>(INITIAL_UNIFIED_FILTERS);
   const [sortBy, setSortBy] = useState<
     | 'featured'
     | 'robbie-fit'
@@ -68,6 +72,8 @@ export const App: React.FC = () => {
   const [syncOpen, setSyncOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const lastRemoteCheckRef = useRef<number>(0);
+  const latestStateRef = useRef<PersistedAppState | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -82,6 +88,8 @@ export const App: React.FC = () => {
     ])
       .then(([payload, pBundle, sHist]) => {
         if (!active) return;
+        lastRemoteCheckRef.current = Date.now();
+        latestStateRef.current = payload.state;
         setAppState(payload.state);
         setSyncMeta(payload.syncMeta);
         setParcelsBundle(pBundle);
@@ -97,20 +105,54 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (!appState) return;
+    latestStateRef.current = appState;
     document.documentElement.setAttribute('data-theme', appState.preferences.theme);
     document.documentElement.setAttribute(
       'data-privacy',
       appState.preferences.privacyBlur ? 'blur' : 'normal'
     );
-  }, [appState]);
-
-  useEffect(() => {
-    if (!appState) return;
+    // Immediate 0ms synchronous mirror to localStorage so favorites, downvotes,
+    // notes, and ideal search edits are saved instantly even if closed right away!
+    saveStateSyncMirror(appState);
     const timer = window.setTimeout(() => {
       void saveState(appState);
-    }, 200);
+    }, 80);
     return () => window.clearTimeout(timer);
   }, [appState]);
+
+  // Flush state on pagehide & auto-check for daily updates when phone app returns to foreground after 4+ hours
+  useEffect(() => {
+    const onPageHide = () => {
+      if (latestStateRef.current) {
+        saveStateSyncMirror(latestStateRef.current);
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (latestStateRef.current) saveStateSyncMirror(latestStateRef.current);
+        return;
+      }
+      if (
+        document.visibilityState === 'visible' &&
+        latestStateRef.current &&
+        Date.now() - lastRemoteCheckRef.current > 4 * 60 * 60 * 1000
+      ) {
+        lastRemoteCheckRef.current = Date.now();
+        void refreshFromRemoteSeed(latestStateRef.current)
+          .then(({ state: refreshed, syncMeta: meta }) => {
+            setAppState(refreshed);
+            setSyncMeta(meta);
+          })
+          .catch(() => {});
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -149,6 +191,38 @@ export const App: React.FC = () => {
     [appState?.hiddenParcelIds]
   );
 
+  const parcelNotes = useMemo<Record<string, string>>(
+    () => appState?.parcelNotes ?? {},
+    [appState?.parcelNotes]
+  );
+
+  const parcelStatuses = useMemo(
+    () => appState?.parcelStatuses ?? {},
+    [appState?.parcelStatuses]
+  );
+
+  const unifiedFilters = useMemo<UnifiedFilters>(
+    () => ({
+      ...INITIAL_UNIFIED_FILTERS,
+      ...((appState?.activeFilters ?? {}) as Partial<UnifiedFilters>),
+    }),
+    [appState?.activeFilters]
+  );
+
+  const setUnifiedFilters = (
+    updater: UnifiedFilters | ((prev: UnifiedFilters) => UnifiedFilters)
+  ) => {
+    setAppState((prev) => {
+      if (!prev) return prev;
+      const cur: UnifiedFilters = {
+        ...INITIAL_UNIFIED_FILTERS,
+        ...((prev.activeFilters ?? {}) as Partial<UnifiedFilters>),
+      };
+      const next = typeof updater === 'function' ? updater(cur) : updater;
+      return { ...prev, activeFilters: next as unknown as Record<string, unknown> };
+    });
+  };
+
   const tasteFilters = useMemo<UnifiedFilters>(
     () => ({
       ...INITIAL_UNIFIED_FILTERS,
@@ -156,6 +230,8 @@ export const App: React.FC = () => {
     }),
     [appState?.tasteFilters]
   );
+
+  const idealSearchNotes = appState?.idealSearchNotes ?? '';
 
   const emailAlerts = useMemo<EmailAlertRule[]>(() => {
     if (appState?.emailAlerts && appState.emailAlerts.length > 0) {
@@ -194,10 +270,12 @@ export const App: React.FC = () => {
             allListings,
             salesHistory,
             savedParcelIds,
-            hiddenParcelIds
+            hiddenParcelIds,
+            parcelNotes,
+            parcelStatuses
           )
         : [],
-    [parcelsBundle, allListings, salesHistory, savedParcelIds, hiddenParcelIds]
+    [parcelsBundle, allListings, salesHistory, savedParcelIds, hiddenParcelIds, parcelNotes, parcelStatuses]
   );
 
   const parsedNl = useMemo(
@@ -293,21 +371,42 @@ export const App: React.FC = () => {
   const hasSampleData = appState.listings.some((l) => l.isSample);
 
   const updateListing = (id: string, patch: Partial<Listing>) => {
+    const matchedHome = catalog.find(
+      (h) => h.parcelId === id || h.listingId === id || h.uid === id
+    );
+    const pid = matchedHome?.parcelId ?? id;
+    const lid = matchedHome?.listingId ?? id;
+
     setAppState((prev) => {
       if (!prev) return prev;
-      const exists = prev.listings.some((item) => item.id === id);
-      if (!exists && patch.isFavorite !== undefined) {
-        return {
-          ...prev,
-          savedParcelIds: {
-            ...(prev.savedParcelIds ?? {}),
-            [id]: Boolean(patch.isFavorite),
-          },
-        };
+      const nextSaved = { ...(prev.savedParcelIds ?? {}) };
+      const nextHidden = { ...(prev.hiddenParcelIds ?? {}) };
+      const nextNotes = { ...(prev.parcelNotes ?? {}) };
+      const nextStatuses = { ...(prev.parcelStatuses ?? {}) };
+
+      if (patch.isFavorite !== undefined) {
+        nextSaved[pid] = Boolean(patch.isFavorite);
+        if (patch.isFavorite) {
+          nextHidden[pid] = false;
+          if (lid) nextHidden[lid] = false;
+        }
       }
+      if (patch.personalNotes !== undefined) {
+        nextNotes[pid] = patch.personalNotes;
+      }
+      if (patch.userStatus !== undefined) {
+        nextStatuses[pid] = patch.userStatus;
+      }
+
       return {
         ...prev,
-        listings: prev.listings.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+        savedParcelIds: nextSaved,
+        hiddenParcelIds: nextHidden,
+        parcelNotes: nextNotes,
+        parcelStatuses: nextStatuses,
+        listings: prev.listings.map((item) =>
+          item.id === id || item.id === lid ? { ...item, ...patch } : item
+        ),
       };
     });
   };
@@ -315,26 +414,28 @@ export const App: React.FC = () => {
   const toggleHomeFavorite = (parcelId: string, listingId: string | null) => {
     setAppState((prev) => {
       if (!prev) return prev;
+      const linked = listingId ? prev.listings.find((item) => item.id === listingId) : undefined;
+      const curFav =
+        (prev.savedParcelIds ?? {})[parcelId] !== undefined
+          ? Boolean((prev.savedParcelIds ?? {})[parcelId])
+          : Boolean(linked?.isFavorite);
+      const nextFav = !curFav;
+
       const nextHidden = { ...(prev.hiddenParcelIds ?? {}), [parcelId]: false };
       if (listingId) nextHidden[listingId] = false;
 
-      if (listingId && prev.listings.some((item) => item.id === listingId)) {
-        return {
-          ...prev,
-          hiddenParcelIds: nextHidden,
-          listings: prev.listings.map((item) =>
-            item.id === listingId ? { ...item, isFavorite: !item.isFavorite } : item
-          ),
-        };
-      }
-      const cur = Boolean((prev.savedParcelIds ?? {})[parcelId]);
       return {
         ...prev,
         hiddenParcelIds: nextHidden,
         savedParcelIds: {
           ...(prev.savedParcelIds ?? {}),
-          [parcelId]: !cur,
+          [parcelId]: nextFav,
         },
+        listings: listingId
+          ? prev.listings.map((item) =>
+              item.id === listingId ? { ...item, isFavorite: nextFav } : item
+            )
+          : prev.listings,
       };
     });
   };
@@ -436,12 +537,16 @@ export const App: React.FC = () => {
             catalog={catalog}
             allListings={allListings}
             tasteFilters={tasteFilters}
+            idealSearchNotes={idealSearchNotes}
             onChangeTasteFilters={(next) =>
               setAppState((prev) =>
                 prev
                   ? { ...prev, tasteFilters: next as unknown as Record<string, unknown> }
                   : prev
               )
+            }
+            onChangeIdealSearchNotes={(notes) =>
+              setAppState((prev) => (prev ? { ...prev, idealSearchNotes: notes } : prev))
             }
             onApplyToMap={(next) => {
               setUnifiedFilters(next);
@@ -1028,8 +1133,15 @@ export const App: React.FC = () => {
       <SettingsDrawer
         open={settingsOpen}
         state={appState}
+        syncMeta={syncMeta}
         hasSampleData={hasSampleData}
         onClose={() => setSettingsOpen(false)}
+        onRefreshNow={async () => {
+          lastRemoteCheckRef.current = Date.now();
+          const { state: refreshed, syncMeta: meta } = await refreshFromRemoteSeed(appState);
+          setAppState(refreshed);
+          setSyncMeta(meta);
+        }}
         onImportState={(next) => setAppState(next)}
         onClearSampleData={() =>
           setAppState((prev) =>
@@ -1037,8 +1149,9 @@ export const App: React.FC = () => {
           )
         }
         onRestoreSeedData={() => {
-          void fetchSeedListings().then((seed) => {
-            setAppState((prev) => (prev ? { ...prev, listings: seed } : prev));
+          void refreshFromRemoteSeed(appState).then(({ state: refreshed, syncMeta: meta }) => {
+            setAppState(refreshed);
+            setSyncMeta(meta);
           });
         }}
         onToggleTheme={() =>
