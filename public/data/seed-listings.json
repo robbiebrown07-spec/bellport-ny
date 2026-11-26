@@ -76,13 +76,20 @@
     "isSample": false,
     "isFavorite": true,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "1832 white-clapboard Greek Revival farmhouse with shuttered shed dormers, exposed-beam double-height great room, and screened porch behind a picket fence."
+    "styleSummary": "1832 white-clapboard Greek Revival farmhouse with shuttered shed dormers, exposed-beam double-height great room, and screened porch behind a picket fence.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "arch",
+      "second_floor",
+      "fireplace"
+    ]
   },
   {
     "id": "bp-68-s-howells-point-rd-14219",
     "externalId": "4853714219",
     "address": "68 S Howells Point Rd",
-    "area": "Country Club & Golf",
+    "area": "South Howells & Bay",
     "inVillage": true,
     "latitude": 40.74656,
     "longitude": -72.94989,
@@ -159,13 +166,24 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Three-story coastal Shingle-Style estate with twin brick end chimneys, arched French doors, carriage guest suite, and private Howells Creek dock."
+    "styleSummary": "Three-story coastal Shingle-Style estate with twin brick end chimneys, arched French doors, carriage guest suite, and private Howells Creek dock.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "lawn",
+      "waterfront",
+      "shingles",
+      "arch",
+      "second_floor",
+      "fireplace",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-19-third-st-17974",
     "externalId": "3106017974",
     "address": "19 Third St",
-    "area": "Village Center",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.76366,
     "longitude": -72.9362,
@@ -225,13 +243,20 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.986Z",
     "walkToMarinaMin": 37,
-    "styleSummary": "Classic weathered cedar-shake Cape Cod with crisp white trim, pedimented entry portico, brick walk, and rear pool deck."
+    "styleSummary": "Classic weathered cedar-shake Cape Cod with crisp white trim, pedimented entry portico, brick walk, and rear pool deck.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "lawn",
+      "shingles",
+      "second_floor"
+    ]
   },
   {
     "id": "bp-25-country-club-rd-72762",
     "externalId": "3368972762",
     "address": "25 Country Club Rd",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.75673,
     "longitude": -72.94752,
@@ -303,13 +328,23 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.986Z",
     "isFavorite": true,
-    "styleSummary": "2023 white-stucco and black-casement transitional Colonial with hipped roof, tall red-brick chimney, two-story foyer, and vaulted primary suite."
+    "styleSummary": "2023 white-stucco and black-casement transitional Colonial with hipped roof, tall red-brick chimney, two-story foyer, and vaulted primary suite.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "waterfront",
+      "arch",
+      "second_floor",
+      "basement",
+      "fireplace",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-6-n-howells-point-rd-42842",
     "externalId": "4811342842",
     "address": "6 N Howells Point Rd",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.75517,
     "longitude": -72.94581,
@@ -386,13 +421,21 @@
     "isSample": false,
     "isFavorite": true,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Sprawling single-story cedar-shingle Ranch with symmetrical dormered entry portico, open entertaining layout, and resort pool pavilion."
+    "styleSummary": "Sprawling single-story cedar-shingle Ranch with symmetrical dormered entry portico, open entertaining layout, and resort pool pavilion.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "lawn",
+      "waterfront",
+      "shingles",
+      "basement"
+    ]
   },
   {
     "id": "bp-67-n-howells-point-rd-34723",
     "externalId": "4711134723",
     "address": "67 N Howells Point Rd",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.7611,
     "longitude": -72.9448,
@@ -458,13 +501,19 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.986Z",
-    "styleSummary": "Warm cedar-toned sprawling Ranch with timbered front porch, wide picture windows, 2007 two-car garage wing, and mahogany gazebo deck."
+    "styleSummary": "Warm cedar-toned sprawling Ranch with timbered front porch, wide picture windows, 2007 two-car garage wing, and mahogany gazebo deck.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "lawn",
+      "basement"
+    ]
   },
   {
     "id": "bp-17-third-st-11537",
     "externalId": "4020911537",
     "address": "17 Third St",
-    "area": "Village Center",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.76345,
     "longitude": -72.93648,
@@ -534,13 +583,20 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
     "walkToMarinaMin": 36,
-    "styleSummary": "White-painted mid-century coastal cottage with dark shutters, vaulted exposed-beam living room, built-in window seats, and detached cedar studio."
+    "styleSummary": "White-painted mid-century coastal cottage with dark shutters, vaulted exposed-beam living room, built-in window seats, and detached cedar studio.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "lawn",
+      "arch",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-26-general-mclean-dr-54993",
     "externalId": "4779554993",
     "address": "26 General McLean Dr",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.75803,
     "longitude": -72.94387,
@@ -602,13 +658,20 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.986Z",
-    "styleSummary": "Natural cedar-shingle Cape cottage with full shed dormer, covered front stoop, brick path, and open fireplace living room."
+    "styleSummary": "Natural cedar-shingle Cape cottage with full shed dormer, covered front stoop, brick path, and open fireplace living room.",
+    "belowSC": false,
+    "feats": [
+      "shingles",
+      "second_floor",
+      "basement",
+      "fireplace"
+    ]
   },
   {
     "id": "bp-79-bieselin-rd-13478",
     "externalId": "3228613478",
     "address": "79 Bieselin Rd",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.76297,
     "longitude": -72.94966,
@@ -682,13 +745,19 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
     "walkToMarinaMin": 39,
-    "styleSummary": "Two-story gray-clapboard Colonial with brick-accented entry, shuttered upper facade, rear sunroom, and three-tier entertaining deck."
+    "styleSummary": "Two-story gray-clapboard Colonial with brick-accented entry, shuttered upper facade, rear sunroom, and three-tier entertaining deck.",
+    "belowSC": false,
+    "feats": [
+      "waterfront",
+      "second_floor",
+      "basement"
+    ]
   },
   {
     "id": "bp-41-station-rd-36469",
     "externalId": "3623836469",
     "address": "41 Station Rd",
-    "area": "Village Center",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.7605,
     "longitude": -72.93946,
@@ -757,13 +826,22 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.986Z",
-    "styleSummary": "Steep-gabled 1922 weathered cedar-shingle corner cottage with full-width covered front porch and white-oak soapstone kitchen."
+    "styleSummary": "Steep-gabled 1922 weathered cedar-shingle corner cottage with full-width covered front porch and white-oak soapstone kitchen.",
+    "belowSC": false,
+    "feats": [
+      "pool",
+      "waterfront",
+      "shingles",
+      "arch",
+      "second_floor",
+      "basement"
+    ]
   },
   {
     "id": "bp-69-circuit-rd-26910",
     "externalId": "3611426910",
     "address": "69 Circuit Rd",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.76295,
     "longitude": -72.94621,
@@ -833,13 +911,18 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
     "walkToMarinaMin": 37,
-    "styleSummary": "Mid-century cream-clapboard split-level with brick end chimney, cantilevered upper bedroom wing, and attached single-bay garage."
+    "styleSummary": "Mid-century cream-clapboard split-level with brick end chimney, cantilevered upper bedroom wing, and attached single-bay garage.",
+    "belowSC": false,
+    "feats": [
+      "waterfront",
+      "second_floor"
+    ]
   },
   {
     "id": "bp-10-kreamer-st-05317",
     "externalId": "3960205317",
     "address": "10 Kreamer St",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.75901,
     "longitude": -72.94741,
@@ -889,13 +972,19 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Renovated two-level gray cedar-shake High Ranch with raised central entry stair, open-concept upper living floor, and double garage."
+    "styleSummary": "Renovated two-level gray cedar-shake High Ranch with raised central entry stair, open-concept upper living floor, and double garage.",
+    "belowSC": false,
+    "feats": [
+      "shingles",
+      "second_floor",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-202-s-country-rd-20864",
     "externalId": "3511420864",
     "address": "202 S Country Rd",
-    "area": "Village Center",
+    "area": "Historic Lanes",
     "inVillage": true,
     "latitude": 40.76011,
     "longitude": -72.93276,
@@ -978,7 +1067,17 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Five-bay ochre-clapboard Georgian estate with gabled roof dormers, paneled double-height foyer, screened porch, and carriage barn on 2 acres."
+    "styleSummary": "Five-bay ochre-clapboard Georgian estate with gabled roof dormers, paneled double-height foyer, screened porch, and carriage barn on 2 acres.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "lawn",
+      "arch",
+      "second_floor",
+      "basement",
+      "fireplace",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-37-browns-ln-31908",
@@ -1062,13 +1161,23 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Stately three-story 1890s Victorian with columned wraparound veranda, central gable dormer, marble hearth, and crowning widow\u2019s walk."
+    "styleSummary": "Stately three-story 1890s Victorian with columned wraparound veranda, central gable dormer, marble hearth, and crowning widow\u2019s walk.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "lawn",
+      "arch",
+      "second_floor",
+      "basement",
+      "fireplace",
+      "addl_struct"
+    ]
   },
   {
     "id": "bp-10-brookside-ave-73063",
     "externalId": "3527673063",
     "address": "10 Brookside Ave",
-    "area": "East Lanes & Circuit",
+    "area": "Historic Lanes",
     "inVillage": true,
     "latitude": 40.76115,
     "longitude": -72.93065,
@@ -1146,13 +1255,19 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Flat-roofed white-stucco Mid-Century Modern pavilion with horizontal clerestory windows and glass-enclosed fireplace sunroom."
+    "styleSummary": "Flat-roofed white-stucco Mid-Century Modern pavilion with horizontal clerestory windows and glass-enclosed fireplace sunroom.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "arch",
+      "fireplace"
+    ]
   },
   {
     "id": "bp-13-oak-meadow-ln-04628",
     "externalId": "3595604628",
     "address": "13 Oak Meadow Ln",
-    "area": "Historic Lanes",
+    "area": "South Howells & Bay",
     "inVillage": true,
     "latitude": 40.75335,
     "longitude": -72.94175,
@@ -1209,13 +1324,22 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Three-story weathered gray-shingle coastal Colonial with wraparound covered porch, upper dormer deck, and gambrel-inspired massing."
+    "styleSummary": "Three-story weathered gray-shingle coastal Colonial with wraparound covered porch, upper dormer deck, and gambrel-inspired massing.",
+    "belowSC": true,
+    "feats": [
+      "pool",
+      "lawn",
+      "shingles",
+      "arch",
+      "second_floor",
+      "fireplace"
+    ]
   },
   {
     "id": "bp-30-general-mcclean-dr-49613",
     "externalId": "3746349613",
     "address": "30 General McClean Dr",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.75851,
     "longitude": -72.94392,
@@ -1272,13 +1396,20 @@
     "personalNotes": "",
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
-    "styleSummary": "Single-story cedar-and-clapboard 1950s Ranch with brick fireplace chimney, shuttered picture windows, and oak hardwood floors."
+    "styleSummary": "Single-story cedar-and-clapboard 1950s Ranch with brick fireplace chimney, shuttered picture windows, and oak hardwood floors.",
+    "belowSC": false,
+    "feats": [
+      "space_pool",
+      "waterfront",
+      "basement",
+      "fireplace"
+    ]
   },
   {
     "id": "bp-76-bieselin-rd-35490",
     "externalId": "3068835490",
     "address": "76 Bieselin Rd",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "inVillage": true,
     "latitude": 40.76231,
     "longitude": -72.95035,
@@ -1332,13 +1463,19 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
     "walkToMarinaMin": 38,
-    "styleSummary": "Renovated two-level coastal residence featuring an open-plan main living floor and lower-level guest suite with cathedral sunroom."
+    "styleSummary": "Renovated two-level coastal residence featuring an open-plan main living floor and lower-level guest suite with cathedral sunroom.",
+    "belowSC": false,
+    "feats": [
+      "space_pool",
+      "second_floor",
+      "basement"
+    ]
   },
   {
     "id": "bp-81-country-club-rd-21171",
     "externalId": "4355921171",
     "address": "81 Country Club Rd",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "inVillage": true,
     "latitude": 40.76248,
     "longitude": -72.94818,
@@ -1391,6 +1528,11 @@
     "isSample": false,
     "lastSyncedAt": "2026-11-25T23:25:29.987Z",
     "walkToMarinaMin": 37,
-    "styleSummary": "Compact single-story white-clapboard 1950 cottage with gabled entry stoop, vaulted wood-beamed ceilings, and detached garage."
+    "styleSummary": "Compact single-story white-clapboard 1950 cottage with gabled entry stoop, vaulted wood-beamed ceilings, and detached garage.",
+    "belowSC": false,
+    "feats": [
+      "space_pool",
+      "addl_struct"
+    ]
   }
 ]

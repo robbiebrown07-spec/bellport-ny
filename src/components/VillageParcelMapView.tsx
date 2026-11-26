@@ -8,113 +8,38 @@ import {
   Plus,
   RotateCcw,
   RotateCw,
-  Search,
+  X,
 } from 'lucide-react';
 import type {
+  HistoricalSaleRecord,
   Listing,
   OffMarketDossier,
-  ParcelStatusCategory,
   SyncMetadata,
   VillageParcel,
   VillageParcelsBundle,
   VillagePoi,
-  VillagePoiKind,
 } from '../types';
 import { evaluateGoodDeal } from '../lib/intelligence';
-import { MeceFilterDropdown, type MeceBucketOption } from './MeceFilterDropdown';
+import {
+  CURRENT_VILLAGE_YEAR,
+  DESIGN_FEATURE_LABELS,
+  buildUnifiedVillageCatalog,
+  fmtShortDollar,
+  homeMatchesUnifiedFilters,
+  isAnyUnifiedFilterActive,
+  toPseudoListing,
+  type UnifiedFilters,
+} from '../lib/unifiedCatalog';
+import { UnifiedFilterBar } from './UnifiedFilterBar';
 import { SalesOverTimeModule } from './SalesOverTimeModule';
 
 interface VillageParcelMapViewProps {
   listings: Listing[];
+  unifiedFilters: UnifiedFilters;
+  onChangeUnifiedFilters: (next: UnifiedFilters) => void;
   privacyBlur: boolean;
-  onOpenListingDrawer: (listingId: string) => void;
+  onOpenHomeDrawer: (parcelId: string) => void;
   onSyncMetaUpdate: (meta: SyncMetadata) => void;
-}
-
-const STATUS_OPTIONS: MeceBucketOption[] = [
-  { value: 'for_sale', label: 'For Sale', swatch: '#ea4335' },
-  { value: 'built_3yr', label: 'Built ≤3 Yrs', swatch: '#fbbc04' },
-  { value: 'sold_3yr', label: 'Sold ≤3 Yrs', swatch: '#34a853' },
-  { value: 'other', label: 'Off-Market (>3 Yrs)', swatch: '#cbd5e1' },
-];
-
-const PRICE_OPTIONS: MeceBucketOption[] = [
-  { value: 'p1', label: 'Under $1M' },
-  { value: 'p2', label: '$1M – $2M' },
-  { value: 'p3', label: '$2M – $3M' },
-  { value: 'p4', label: '$3M+' },
-];
-
-const SIZE_OPTIONS: MeceBucketOption[] = [
-  { value: 's1', label: '< 1,800 ft² (1–2 BR)' },
-  { value: 's2', label: '1,800 – 2,349 ft² (3 BR)' },
-  { value: 's3', label: '2,350 – 3,499 ft² (4 BR)' },
-  { value: 's4', label: '3,500+ ft² (5+ BR)' },
-];
-
-const LOT_OPTIONS: MeceBucketOption[] = [
-  { value: 'l1', label: '< 0.35 ac' },
-  { value: 'l2', label: '0.35 – 0.49 ac' },
-  { value: 'l3', label: '0.50 – 0.99 ac' },
-  { value: 'l4', label: '1.00+ ac' },
-];
-
-const AREA_OPTIONS: MeceBucketOption[] = [
-  { value: 'Historic Lanes', label: 'Historic Lanes' },
-  { value: 'Country Club & Golf', label: 'Country Club & Golf' },
-  { value: 'Village Center', label: 'Village Center' },
-  { value: 'East Lanes & Circuit', label: 'East Lanes & Circuit' },
-];
-
-const FEATURE_OPTIONS: MeceBucketOption[] = [
-  { value: 'pool_yes', label: 'Has Pool' },
-  { value: 'pool_no', label: 'No Pool' },
-  { value: 'wf_yes', label: 'Waterfront' },
-  { value: 'wf_no', label: 'Inland' },
-  { value: 'own_2nd', label: '2nd-Home / Out-of-Town' },
-  { value: 'own_local', label: 'Local Owner' },
-];
-
-const LOT_COLORS: Record<
-  ParcelStatusCategory,
-  { label: string; fill: string; stroke: string; badge: string }
-> = {
-  for_sale: { label: 'For Sale', fill: '#f28b82', stroke: '#c5221f', badge: '#ea4335' },
-  built_3yr: { label: 'Built ≤3 Yrs', fill: '#fde293', stroke: '#b06000', badge: '#f9ab00' },
-  sold_3yr: { label: 'Sold ≤3 Yrs', fill: '#81c995', stroke: '#137333', badge: '#34a853' },
-  other: { label: 'Off-Market', fill: '#ebedf2', stroke: '#d2d7e0', badge: '#80868b' },
-};
-
-const POI_LOT_COLOR: Record<VillagePoiKind, { fill: string; stroke: string; text: string }> = {
-  golf: { fill: '#c6e9cf', stroke: '#81c995', text: '#188038' },
-  park: { fill: '#ceead6', stroke: '#81c995', text: '#188038' },
-  beach: { fill: '#fde68a', stroke: '#f59e0b', text: '#b45309' },
-  public: { fill: '#e0e7ff', stroke: '#a5b4fc', text: '#4338ca' },
-  dining: { fill: '#ffedd5', stroke: '#fdba74', text: '#c2410c' },
-  shop: { fill: '#ede9fe', stroke: '#c4b5fd', text: '#6d28d9' },
-};
-
-function parcelPriceBucket(val?: number | null): string {
-  const v = val ?? 0;
-  if (v < 1_000_000) return 'p1';
-  if (v < 2_000_000) return 'p2';
-  if (v < 3_000_000) return 'p3';
-  return 'p4';
-}
-
-function parcelSizeBucket(p: VillageParcel): string {
-  const sf = p.sqft ?? (p.beds ? p.beds * 620 : 1950);
-  if (sf < 1800) return 's1';
-  if (sf < 2350) return 's2';
-  if (sf < 3500) return 's3';
-  return 's4';
-}
-
-function parcelLotBucket(acres: number): string {
-  if (acres < 0.35) return 'l1';
-  if (acres < 0.5) return 'l2';
-  if (acres < 1.0) return 'l3';
-  return 'l4';
 }
 
 function pointInRing(lon: number, lat: number, ring: number[][]): boolean {
@@ -133,32 +58,26 @@ function pointInRing(lon: number, lat: number, ring: number[][]): boolean {
 
 export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
   listings,
+  unifiedFilters,
+  onChangeUnifiedFilters,
   privacyBlur,
-  onOpenListingDrawer,
+  onOpenHomeDrawer,
   onSyncMetaUpdate,
 }) => {
   const [bundle, setBundle] = useState<VillageParcelsBundle | null>(null);
-
-  // Clean MECE Dropdown States
-  const [statusSet, setStatusSet] = useState<Set<string>>(() => new Set());
-  const [priceSet, setPriceSet] = useState<Set<string>>(() => new Set());
-  const [sizeSet, setSizeSet] = useState<Set<string>>(() => new Set());
-  const [lotSet, setLotSet] = useState<Set<string>>(() => new Set());
-  const [areaSet, setAreaSet] = useState<Set<string>>(() => new Set());
-  const [featureSet, setFeatureSet] = useState<Set<string>>(() => new Set());
-
+  const [sales, setSales] = useState<HistoricalSaleRecord[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [selectedPoi, setSelectedPoi] = useState<VillagePoi | null>(null);
   const [hoveredParcel, setHoveredParcel] = useState<VillageParcel | null>(null);
   const [dossiersByAddr, setDossiersByAddr] = useState<Record<string, OffMarketDossier>>({});
   const [dossierLoading, setDossierLoading] = useState(false);
-  const [dossierError, setDossierError] = useState<string | null>(null);
 
+  // zoom = 1.0 fits 100% of mainland Bellport Village across any screen aspect ratio
   const [view, setView] = useState({
-    zoom: 1.26,
-    centerLon: -72.9408,
-    centerLat: 40.7528,
+    zoom: 1.0,
+    centerLon: -72.9416,
+    centerLat: 40.7532,
     bearing: 0,
   });
 
@@ -181,95 +100,34 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     moved: false,
     startX: 0,
     startY: 0,
-    startLon: -72.9408,
-    startLat: 40.7528,
+    startLon: -72.9416,
+    startLat: 40.7532,
     startBearing: 0,
   });
 
   useEffect(() => {
     let active = true;
-    fetch('/data/bellport-parcels.json')
-      .then((r) => r.json() as Promise<VillageParcelsBundle>)
-      .then((data) => {
+    Promise.all([
+      fetch('/data/bellport-parcels.json').then((r) => r.json() as Promise<VillageParcelsBundle>),
+      fetch('/data/bellport-sales-history.json').then(
+        (r) => r.json() as Promise<HistoricalSaleRecord[]>
+      ),
+    ])
+      .then(([pData, sData]) => {
         if (!active) return;
-        setBundle(data);
-        const firstSale = data.parcels.find((p) => p.cat === 'for_sale');
-        if (firstSale) setSelectedParcelId(firstSale.id);
+        setBundle(pData);
+        setSales(sData);
       })
-      .catch((err) => console.error('Failed to load Bellport parcels:', err));
+      .catch((err) => console.error('Failed to load Bellport Village map data:', err));
     return () => {
       active = false;
     };
   }, []);
 
-  const hasAnyFilter =
-    statusSet.size > 0 ||
-    priceSet.size > 0 ||
-    sizeSet.size > 0 ||
-    lotSet.size > 0 ||
-    areaSet.size > 0 ||
-    featureSet.size > 0;
-
-  const resetAllFilters = () => {
-    setStatusSet(new Set());
-    setPriceSet(new Set());
-    setSizeSet(new Set());
-    setLotSet(new Set());
-    setAreaSet(new Set());
-    setFeatureSet(new Set());
-  };
-
-  const matchedIds = useMemo(() => {
-    const out = new Set<string>();
-    if (!bundle || !hasAnyFilter) return out;
-
-    for (const p of bundle.parcels) {
-      if (!p.res && statusSet.size === 0 && priceSet.size > 0) continue;
-      if (statusSet.size > 0 && !statusSet.has(p.cat)) continue;
-      if (priceSet.size > 0 && (!p.val || !priceSet.has(parcelPriceBucket(p.val)))) continue;
-      if (sizeSet.size > 0 && (!p.res || !sizeSet.has(parcelSizeBucket(p)))) continue;
-      if (lotSet.size > 0 && !lotSet.has(parcelLotBucket(p.acres))) continue;
-      if (areaSet.size > 0 && !areaSet.has(p.area)) continue;
-
-      if (featureSet.size > 0) {
-        const wantPool = featureSet.has('pool_yes');
-        const wantNoPool = featureSet.has('pool_no');
-        if (wantPool !== wantNoPool && (wantPool ? !p.pool : p.pool)) continue;
-
-        const wantWf = featureSet.has('wf_yes');
-        const wantNoWf = featureSet.has('wf_no');
-        if (wantWf !== wantNoWf && (wantWf ? !p.waterfront : p.waterfront)) continue;
-
-        const want2nd = featureSet.has('own_2nd');
-        const wantLocal = featureSet.has('own_local');
-        if (want2nd !== wantLocal && (want2nd ? !p.absentee : p.absentee)) continue;
-      }
-
-      out.add(p.id);
-    }
-    return out;
-  }, [bundle, hasAnyFilter, statusSet, priceSet, sizeSet, lotSet, areaSet, featureSet]);
-
-  const listingById = useMemo(() => {
-    const m = new Map<string, Listing>();
-    for (const l of listings) m.set(l.id, l);
-    return m;
-  }, [listings]);
-
-  const searchMatches = useMemo(() => {
-    if (!bundle || !searchText.trim()) return [];
-    const q = searchText.trim().toLowerCase();
-    return bundle.parcels.filter((p) => p.addr.toLowerCase().includes(q)).slice(0, 7);
-  }, [bundle, searchText]);
-
-  const selectedParcel = useMemo(() => {
-    if (!bundle || !selectedParcelId) return null;
-    return bundle.parcels.find((p) => p.id === selectedParcelId) ?? null;
-  }, [bundle, selectedParcelId]);
-
-  const matchedListing = selectedParcel?.listingId
-    ? (listingById.get(selectedParcel.listingId) ?? null)
-    : null;
+  const getScales = useCallback((w: number, h: number, zoom: number): [number, number] => {
+    const baseLon = Math.min(w / 0.0325, (h * 0.7575) / 0.0278) * zoom;
+    return [baseLon, baseLon / 0.7575];
+  }, []);
 
   const projectWith = useCallback(
     (
@@ -277,18 +135,17 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       lat: number,
       width: number,
       height: number,
-      v: typeof view
+      v: { zoom: number; centerLon: number; centerLat: number; bearing: number }
     ): [number, number] => {
-      const pxLon = (width / 0.036) * v.zoom;
-      const pxLat = pxLon / 0.7575;
+      const [pxLon, pxLat] = getScales(width, height, v.zoom);
       const dx = (lon - v.centerLon) * pxLon;
       const dy = -(lat - v.centerLat) * pxLat;
       const rad = (v.bearing * Math.PI) / 180;
-      const cosB = Math.cos(rad);
-      const sinB = Math.sin(rad);
-      return [width / 2 + dx * cosB - dy * sinB, height / 2 + dx * sinB + dy * cosB];
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return [width / 2 + (dx * cos - dy * sin), height / 2 + (dx * sin + dy * cos)];
     },
-    []
+    [getScales]
   );
 
   const unprojectWith = useCallback(
@@ -297,20 +154,60 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       sy: number,
       width: number,
       height: number,
-      v: typeof view
+      v: { zoom: number; centerLon: number; centerLat: number; bearing: number }
     ): [number, number] => {
-      const pxLon = (width / 0.036) * v.zoom;
-      const pxLat = pxLon / 0.7575;
+      const [pxLon, pxLat] = getScales(width, height, v.zoom);
       const rx = sx - width / 2;
       const ry = sy - height / 2;
       const rad = (-v.bearing * Math.PI) / 180;
-      const cosB = Math.cos(rad);
-      const sinB = Math.sin(rad);
-      const dx = rx * cosB - ry * sinB;
-      const dy = rx * sinB + ry * cosB;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const dx = rx * cos - ry * sin;
+      const dy = rx * sin + ry * cos;
       return [v.centerLon + dx / pxLon, v.centerLat - dy / pxLat];
     },
-    []
+    [getScales]
+  );
+
+  const catalog = useMemo(
+    () => (bundle ? buildUnifiedVillageCatalog(bundle.parcels, listings, sales) : []),
+    [bundle, listings, sales]
+  );
+
+  const homeByParcelId = useMemo(
+    () => new Map(catalog.map((h) => [h.parcelId, h])),
+    [catalog]
+  );
+
+  const filtering = isAnyUnifiedFilterActive(unifiedFilters);
+
+  const matchedIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!filtering) return ids;
+    for (const h of catalog) {
+      if (homeMatchesUnifiedFilters(h, unifiedFilters, false)) {
+        ids.add(h.parcelId);
+      }
+    }
+    return ids;
+  }, [catalog, filtering, unifiedFilters]);
+
+  const searchMatches = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!bundle || !q) return [];
+    return bundle.parcels
+      .filter((p) => !p.underwater && p.addr.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [bundle, searchText]);
+
+  const selectedParcel = useMemo(
+    () => bundle?.parcels.find((p) => p.id === selectedParcelId) ?? null,
+    [bundle, selectedParcelId]
+  );
+
+  const selectedHome = useMemo(
+    () => (selectedParcelId ? (homeByParcelId.get(selectedParcelId) ?? null) : null),
+    [homeByParcelId, selectedParcelId]
   );
 
   const selectAtClientPoint = useCallback(
@@ -318,46 +215,39 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       const canvas = canvasRef.current;
       if (!canvas || !bundle) return;
       const rect = canvas.getBoundingClientRect();
-      const [lon, lat] = unprojectWith(
-        clientX - rect.left,
-        clientY - rect.top,
-        rect.width,
-        rect.height,
-        viewRef.current
-      );
+      const mx = clientX - rect.left;
+      const my = clientY - rect.top;
+      const [lon, lat] = unprojectWith(mx, my, rect.width, rect.height, viewRef.current);
+
+      const hits: VillageParcel[] = [];
       for (const p of bundle.parcels) {
-        if (p.rings.some((r) => pointInRing(lon, lat, r))) {
-          const linkedPoi = (bundle.pois ?? []).find((poi) => poi.parcelId === p.id) ?? null;
-          if (linkedPoi && !p.res) {
-            setSelectedPoi(linkedPoi);
-            setSelectedParcelId(p.id);
-          } else {
-            setSelectedPoi(null);
-            setSelectedParcelId(p.id);
-          }
-          setDossierError(null);
-          return;
-        }
+        if (p.underwater) continue;
+        if (p.rings.some((r) => pointInRing(lon, lat, r))) hits.push(p);
+      }
+      if (hits.length === 0) return;
+      hits.sort((a, b) => a.acres - b.acres);
+      const hit = hits[0];
+
+      const linkedPoi = hit.poiKind
+        ? bundle.pois.find((poi) => poi.parcelId === hit.id)
+        : undefined;
+      if (linkedPoi && !hit.res) {
+        setSelectedPoi(linkedPoi);
+        setSelectedParcelId(hit.id);
+      } else {
+        setSelectedPoi(null);
+        setSelectedParcelId(hit.id);
       }
     },
     [bundle, unprojectWith]
   );
 
-  // Native Mobile Two-Finger Pinch-to-Zoom + 1-Finger Pan & Tap (touch-action: none)
+  // Native non-passive touch handler for smooth 2-finger pinch-to-zoom + pan/twist + 1-finger tap
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let touchState: {
-      count: number;
-      moved: boolean;
-      startX: number;
-      startY: number;
-      lastMidX: number;
-      lastMidY: number;
-      lastDist: number;
-      lastAngle: number;
-    } = {
+    let touchState = {
       count: 0,
       moved: false,
       startX: 0,
@@ -417,8 +307,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         touchState.lastMidX = t.clientX;
         touchState.lastMidY = t.clientY;
 
-        const pxLon = (rect.width / 0.036) * cur.zoom;
-        const pxLat = pxLon / 0.7575;
+        const [pxLon, pxLat] = getScales(rect.width, rect.height, cur.zoom);
         const rad = (-cur.bearing * Math.PI) / 180;
         const dxU = dx * Math.cos(rad) - dy * Math.sin(rad);
         const dyU = dx * Math.sin(rad) + dy * Math.cos(rad);
@@ -446,15 +335,14 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         }
 
         const scale = dist / touchState.lastDist;
-        const nextZoom = Math.max(0.9, Math.min(12, cur.zoom * scale));
+        const nextZoom = Math.max(0.85, Math.min(14, cur.zoom * scale));
 
         let dAngleDeg = ((angle - touchState.lastAngle) * 180) / Math.PI;
         if (dAngleDeg > 180) dAngleDeg -= 360;
         if (dAngleDeg < -180) dAngleDeg += 360;
         const nextBearing =
-          Math.abs(dAngleDeg) > 0.8 ? (cur.bearing + dAngleDeg + 360) % 360 : cur.bearing;
+          Math.abs(dAngleDeg) > 1.2 ? (cur.bearing + dAngleDeg + 360) % 360 : cur.bearing;
 
-        // Keep world coordinate under previous pinch midpoint anchored at new pinch midpoint
         const prevLocalX = touchState.lastMidX - rect.left;
         const prevLocalY = touchState.lastMidY - rect.top;
         const [anchorLon, anchorLat] = unprojectWith(
@@ -467,8 +355,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
         const newLocalX = midX - rect.left;
         const newLocalY = midY - rect.top;
-        const pxLon = (rect.width / 0.036) * nextZoom;
-        const pxLat = pxLon / 0.7575;
+        const [pxLon, pxLat] = getScales(rect.width, rect.height, nextZoom);
         const rx = newLocalX - rect.width / 2;
         const ry = newLocalY - rect.height / 2;
         const rad = (-nextBearing * Math.PI) / 180;
@@ -511,9 +398,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       canvas.removeEventListener('touchmove', onTouchMove);
       canvas.removeEventListener('touchend', onTouchEnd);
     };
-  }, [selectAtClientPoint, unprojectWith]);
+  }, [getScales, selectAtClientPoint, unprojectWith]);
 
-  // Lot-Colored Clean Google-Maps Vector Renderer (ZERO Dots!)
+  // Full-Town Lot-Colored Renderer (For Sale = Light Green, Golf = Light Green, Beach = Light Yellow, Viewport-Clipped Road Names on Zoom)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !bundle) return;
@@ -542,8 +429,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.closePath();
     };
 
-    // 1. Outside-Village Muted Gray Land + Inside-Village Clean Alabaster + Exact Bay Water
-    ctx.fillStyle = '#e3e6eb';
+    ctx.fillStyle = '#dde1e5';
     ctx.fillRect(0, 0, width, height);
 
     ctx.save();
@@ -556,7 +442,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       });
       ctx.closePath();
     }
-    ctx.fillStyle = '#f8f9fa';
+    ctx.fillStyle = '#f8f7f3';
     ctx.fill();
     ctx.restore();
 
@@ -564,44 +450,92 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.save();
       for (const wr of bundle.waterRings) {
         traceRing(wr);
-        ctx.fillStyle = '#aadaff';
+        ctx.fillStyle = '#c6e2f5';
         ctx.fill();
-        ctx.strokeStyle = '#8cc3f0';
+        ctx.strokeStyle = '#9cc5e0';
         ctx.lineWidth = 1;
         ctx.stroke();
       }
       ctx.restore();
     }
 
-    // 2. Color the Exact Polygon Shape of EVERY Lot (Zero Dots!)
+    // Fire Island Ho-Hum Beach -> Light Yellow
+    if (bundle.boundaryRings && bundle.boundaryRings[1]) {
+      ctx.save();
+      traceRing(bundle.boundaryRings[1]);
+      ctx.fillStyle = '#fbf0b2';
+      ctx.fill();
+      ctx.strokeStyle = '#dfc865';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Color the exact polygon shape of every lot
     for (const p of bundle.parcels) {
+      if (p.underwater) continue;
+      const hObj = homeByParcelId.get(p.id);
       const isMatch = matchedIds.has(p.id);
-      const dimmed = hasAnyFilter && !isMatch;
+      const dimmed = filtering && p.res && !isMatch;
 
-      let fill = LOT_COLORS[p.cat].fill;
-      let stroke = LOT_COLORS[p.cat].stroke;
-      let lw = p.cat === 'other' ? 0.65 : 1.15;
+      let fill = '#e6e8ec';
+      let stroke = '#cfd4dc';
+      let lw = 0.65;
 
-      if (p.cat === 'other') {
-        if (p.poiKind) {
-          fill = POI_LOT_COLOR[p.poiKind].fill;
-          stroke = POI_LOT_COLOR[p.poiKind].stroke;
-        } else if (p.cls === '552') {
-          fill = '#c6e9cf';
-          stroke = '#81c995';
-        } else if (p.cls.startsWith('5') || p.cls.startsWith('9') || p.cls.startsWith('8')) {
-          fill = '#ceead6';
-          stroke = '#9ad4a8';
-        } else if (p.cls.startsWith('4')) {
-          fill = '#f1eff8';
-          stroke = '#d0c9e8';
+      if (!p.res) {
+        if (p.poiKind === 'golf' || p.cls === '552') {
+          fill = '#d7f0d4';
+          stroke = '#a3d39f';
+          lw = 0.9;
+        } else if (p.poiKind === 'beach') {
+          fill = '#fbf0b2';
+          stroke = '#dfc865';
+          lw = 1.0;
+        } else if (
+          p.poiKind === 'park' ||
+          p.cls.startsWith('5') ||
+          p.cls.startsWith('9') ||
+          p.cls.startsWith('8')
+        ) {
+          fill = '#dcecd8';
+          stroke = '#b2d4ae';
+          lw = 0.75;
+        } else if (p.cls.startsWith('4') || p.poiKind === 'dining' || p.poiKind === 'shop') {
+          fill = '#edeae2';
+          stroke = '#d5cfc2';
+          lw = 0.7;
         }
+      } else if (p.cat === 'for_sale') {
+        fill = '#9be3b0';
+        stroke = '#1f7a46';
+        lw = 1.25;
       }
 
-      if (isMatch) {
-        fill = p.cat === 'other' ? '#bfd6fb' : fill;
-        stroke = '#1a73e8';
-        lw = 1.8;
+      if (isMatch && hObj) {
+        if (
+          unifiedFilters.builtRecent &&
+          hObj.yearBuilt >= CURRENT_VILLAGE_YEAR - unifiedFilters.builtYears
+        ) {
+          fill = '#f7d98c';
+          stroke = '#b07412';
+          lw = 1.65;
+        } else if (
+          unifiedFilters.soldRecent &&
+          hObj.soldYear !== null &&
+          hObj.soldYear >= CURRENT_VILLAGE_YEAR - unifiedFilters.soldYears
+        ) {
+          fill = '#9cd3e8';
+          stroke = '#1e6b8c';
+          lw = 1.65;
+        } else if (p.cat === 'for_sale') {
+          fill = '#9be3b0';
+          stroke = '#145a32';
+          lw = 1.8;
+        } else {
+          fill = '#bdd6ea';
+          stroke = '#1e3a4c';
+          lw = 1.55;
+        }
       }
 
       ctx.save();
@@ -615,18 +549,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         ctx.stroke();
       }
 
-      // Subtle 2D rooftop footprint nested inside the colored lot
       if (p.bldgs && p.bldgs.length > 0 && view.zoom >= 1.35) {
         ctx.fillStyle =
           p.cat === 'for_sale'
-            ? '#ea4335'
-            : p.cat === 'built_3yr'
-              ? '#fbbc04'
-              : p.cat === 'sold_3yr'
-                ? '#34a853'
-                : isMatch
-                  ? '#93baf8'
-                  : 'rgba(148, 163, 184, 0.35)';
+            ? 'rgba(31, 122, 70, 0.35)'
+            : isMatch
+              ? 'rgba(30, 58, 76, 0.32)'
+              : 'rgba(120, 132, 145, 0.28)';
         for (const br of p.bldgs) {
           traceRing(br);
           ctx.fill();
@@ -635,17 +564,17 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // 3. Google-Maps Cased White Roads
+    // Cased White Roads
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const roadScale = Math.max(0.85, Math.min(2.6, Math.pow(view.zoom, 0.65)));
+    const roadScale = Math.max(0.82, Math.min(2.6, Math.pow(view.zoom, 0.65)));
 
     for (const st of bundle.streets) {
-      const isArt = /Main St|South Country/i.test(st.name);
+      const isArt = /Main St|Country Rd/i.test(st.name);
       const isCol = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(st.name);
-      ctx.strokeStyle = isArt ? '#e5c585' : '#dadce0';
-      ctx.lineWidth = (isArt ? 6.8 : isCol ? 4.8 : 3.2) * roadScale;
+      ctx.strokeStyle = isArt ? '#dfd3ba' : '#d5d9df';
+      ctx.lineWidth = (isArt ? 6.4 : isCol ? 4.6 : 3.0) * roadScale;
       for (const seg of st.segments) {
         if (seg.length < 2) continue;
         ctx.beginPath();
@@ -659,10 +588,10 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
 
     for (const st of bundle.streets) {
-      const isArt = /Main St|South Country/i.test(st.name);
+      const isArt = /Main St|Country Rd/i.test(st.name);
       const isCol = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(st.name);
-      ctx.strokeStyle = isArt ? '#fef3c7' : '#ffffff';
-      ctx.lineWidth = (isArt ? 5.2 : isCol ? 3.5 : 2.1) * roadScale;
+      ctx.strokeStyle = isArt ? '#fbf4e2' : '#ffffff';
+      ctx.lineWidth = (isArt ? 4.8 : isCol ? 3.3 : 2.0) * roadScale;
       for (const seg of st.segments) {
         if (seg.length < 2) continue;
         ctx.beginPath();
@@ -676,7 +605,22 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
     ctx.restore();
 
-    // 4. Exterior Greyed-Out Veil Outside Incorporated Bellport Village Border
+    if (unifiedFilters.belowSC && bundle.southCountryLine && bundle.southCountryLine.length > 1) {
+      ctx.save();
+      ctx.beginPath();
+      bundle.southCountryLine.forEach((pt, idx) => {
+        const [px, py] = projectWith(pt[0], pt[1], width, height, view);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = '#1e3a4c';
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Exterior Greyed-Out Veil Outside Incorporated Bellport Village Border
     if (bundle.boundaryRings && bundle.boundaryRings.length > 0) {
       ctx.save();
       ctx.beginPath();
@@ -689,13 +633,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         });
         ctx.closePath();
       }
-      ctx.fillStyle = 'rgba(214, 219, 227, 0.56)';
+      ctx.fillStyle = 'rgba(214, 218, 224, 0.58)';
       ctx.fill('evenodd');
 
       for (const ring of bundle.boundaryRings) {
         traceRing(ring);
-        ctx.strokeStyle = '#80868b';
-        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = '#7d8790';
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -703,12 +647,12 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // 5. Hovered & Selected Lot Boundary Outlines
+    // Hovered & Selected Lot Outlines
     for (const [parcel, color, lw] of [
-      [hoveredParcel, '#3c4043', 1.8],
-      [selectedParcel, '#1a73e8', 2.6],
+      [hoveredParcel, '#374151', 1.8],
+      [selectedParcel, '#1e3a4c', 2.8],
     ] as Array<[VillageParcel | null, string, number]>) {
-      if (!parcel) continue;
+      if (!parcel || parcel.underwater) continue;
       ctx.save();
       ctx.lineJoin = 'round';
       for (const ring of parcel.rings) {
@@ -720,10 +664,10 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // 6. Clean Inline Street & Place Labels (Collision-Free, Zero Dots!)
+    // Viewport-Clipped Densified Road Labels (0 at default zoom=1.0; crisp street names on zoom >= 1.28!)
     const placed: Array<[number, number, number, number]> = [];
     const canPlace = (cx: number, cy: number, bw: number, bh: number): boolean => {
-      if (cx < 36 || cx > width - 36 || cy < 18 || cy > height - 18) return false;
+      if (cx < 40 || cx > width - 40 || cy < 20 || cy > height - 20) return false;
       const b: [number, number, number, number] = [
         cx - bw / 2,
         cy - bh / 2,
@@ -738,85 +682,130 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     };
 
     ctx.save();
-    ctx.font = '500 10.5px "Google Sans Text", Roboto, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    if (view.zoom >= 1.75) {
-      for (const st of bundle.streets) {
-        const isPrimary =
-          /Main St|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit/i.test(
-            st.name
-          );
-        if (!isPrimary && view.zoom < 2.35) continue;
-        const longest = st.segments.reduce(
-          (best, cur) => (cur.length > best.length ? cur : best),
-          st.segments[0] ?? []
-        );
-        if (longest.length < 2) continue;
-        const mid = Math.floor(longest.length / 2);
-        const pA = longest[Math.max(0, mid - 1)];
-        const pB = longest[Math.min(longest.length - 1, mid + 1)];
-        const [ax, ay] = projectWith(pA[0], pA[1], width, height, view);
-        const [bx, by] = projectWith(pB[0], pB[1], width, height, view);
-        const segPx = Math.hypot(bx - ax, by - ay);
-        const tw = ctx.measureText(st.name).width;
-        if (segPx < tw * 0.7 && view.zoom < 2.8) continue;
-        const mx = (ax + bx) / 2;
-        const my = (ay + by) / 2;
-        if (!canPlace(mx, my, tw + 26, 22)) continue;
-
-        let ang = Math.atan2(by - ay, bx - ax);
-        if (ang > Math.PI / 2) ang -= Math.PI;
-        if (ang < -Math.PI / 2) ang += Math.PI;
-
-        ctx.save();
-        ctx.translate(mx, my);
-        ctx.rotate(ang);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#ffffff';
-        ctx.strokeText(st.name, 0, 0);
-        ctx.fillStyle = '#5f6368';
-        ctx.fillText(st.name, 0, 0);
-        ctx.restore();
-      }
-    }
-
-    // Pure text labels over colored Park/Golf/Beach/Shop lots (Zero Dots, zoom-progressive!)
-    const [bayX, bayY] = projectWith(-72.9415, 40.7425, width, height, view);
+    const [bayX, bayY] = projectWith(-72.9415, 40.7422, width, height, view);
     if (canPlace(bayX, bayY, 90, 20)) {
-      ctx.font = 'italic 500 11.5px Georgia, serif';
-      ctx.fillStyle = '#3b78a8';
+      ctx.font = 'italic 11.5px Georgia, serif';
+      ctx.fillStyle = '#487699';
       ctx.fillText('Bellport Bay', bayX, bayY);
     }
 
-    if (view.zoom >= 1.75) {
-      for (const poi of bundle.pois ?? []) {
-        const isLandmark =
-          poi.id === 'poi-golf' ||
-          poi.id === 'poi-ferry' ||
-          poi.id === 'poi-mothers-beach' ||
-          poi.id === 'poi-osborn-park' ||
-          poi.id === 'poi-gateway';
-        if (!isLandmark && view.zoom < 2.35) continue;
-        const [px, py] = projectWith(poi.lon, poi.lat, width, height, view);
-        const shortName = poi.name
-          .replace(' & 18-Hole Golf Course', '')
-          .replace('Whalehouse Point ', '');
-        ctx.font = '500 10.5px "Google Sans Text", Roboto, system-ui, sans-serif';
-        const tw = ctx.measureText(shortName).width;
-        if (!canPlace(px, py, tw + 14, 16)) continue;
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#ffffff';
-        ctx.strokeText(shortName, px, py);
-        ctx.fillStyle = POI_LOT_COLOR[poi.kind].text;
-        ctx.fillText(shortName, px, py);
+    if (view.zoom >= 1.28) {
+      ctx.font = '500 10.5px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
+      const seenNames = new Set<string>();
+      const ordered = [...bundle.streets].sort((a, b) => {
+        const ap =
+          /Main St|Country Rd|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit|Bieselin/i.test(
+            a.name
+          );
+        const bp =
+          /Main St|Country Rd|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit|Bieselin/i.test(
+            b.name
+          );
+        return Number(bp) - Number(ap);
+      });
+
+      for (const st of ordered) {
+        const cleanName = st.name.replace('Main St (S Country Rd)', 'Main St');
+        if (seenNames.has(cleanName)) continue;
+        const isPri =
+          /Main St|Country Rd|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit|Bieselin/i.test(
+            st.name
+          );
+        if (!isPri && view.zoom < 1.65) continue;
+
+        let bestVis: Array<[number, number]> | null = null;
+        let bestSpan = 0;
+
+        for (const seg of st.segments) {
+          if (seg.length < 2) continue;
+          const projPts = seg.map((p) => projectWith(p[0], p[1], width, height, view));
+          const dense: Array<[number, number]> = [];
+          for (let i = 0; i < projPts.length - 1; i++) {
+            const [x1, y1] = projPts[i];
+            const [x2, y2] = projPts[i + 1];
+            const d = Math.hypot(x2 - x1, y2 - y1);
+            const steps = Math.max(1, Math.floor(d / 16));
+            for (let s = 0; s < steps; s++) {
+              const t = s / steps;
+              dense.push([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]);
+            }
+          }
+          dense.push(projPts[projPts.length - 1]);
+
+          let curRun: Array<[number, number]> = [];
+          for (const pt of dense) {
+            if (pt[0] >= 44 && pt[0] <= width - 44 && pt[1] >= 24 && pt[1] <= height - 24) {
+              curRun.push(pt);
+            } else {
+              if (curRun.length >= 2) {
+                const sp = Math.hypot(
+                  curRun[curRun.length - 1][0] - curRun[0][0],
+                  curRun[curRun.length - 1][1] - curRun[0][1]
+                );
+                if (sp > bestSpan) {
+                  bestSpan = sp;
+                  bestVis = curRun;
+                }
+              }
+              curRun = [];
+            }
+          }
+          if (curRun.length >= 2) {
+            const sp = Math.hypot(
+              curRun[curRun.length - 1][0] - curRun[0][0],
+              curRun[curRun.length - 1][1] - curRun[0][1]
+            );
+            if (sp > bestSpan) {
+              bestSpan = sp;
+              bestVis = curRun;
+            }
+          }
+        }
+
+        if (!bestVis || bestSpan < 34) continue;
+        const midIdx = Math.floor(bestVis.length / 2);
+        const [mx, my] = bestVis[midIdx];
+        const pA = bestVis[Math.max(0, midIdx - 2)];
+        const pB = bestVis[Math.min(bestVis.length - 1, midIdx + 2)];
+        const tw = ctx.measureText(cleanName).width;
+        if (!canPlace(mx, my, tw + 22, 20)) continue;
+
+        let ang = Math.atan2(pB[1] - pA[1], pB[0] - pA[0]);
+        if (ang > Math.PI / 2) ang -= Math.PI;
+        if (ang < -Math.PI / 2) ang += Math.PI;
+
+        seenNames.add(cleanName);
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(ang);
+        ctx.lineWidth = 3.2;
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+        ctx.strokeText(cleanName, 0, 0);
+        ctx.fillStyle = '#3f4a52';
+        ctx.fillText(cleanName, 0, 0);
+        ctx.restore();
       }
     }
     ctx.restore();
-
     ctx.restore();
-  }, [bundle, hasAnyFilter, matchedIds, hoveredParcel, selectedParcel, projectWith, view]);
+  }, [
+    bundle,
+    filtering,
+    homeByParcelId,
+    hoveredParcel,
+    matchedIds,
+    projectWith,
+    selectedParcel,
+    unifiedFilters.belowSC,
+    unifiedFilters.builtRecent,
+    unifiedFilters.builtYears,
+    unifiedFilters.soldRecent,
+    unifiedFilters.soldYears,
+    view,
+  ]);
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -826,24 +815,20 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const [lonBefore, latBefore] = unprojectWith(mx, my, rect.width, rect.height, view);
-
-    const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
-    const nextZoom = Math.max(0.9, Math.min(12, view.zoom * factor));
-
-    const pxLon = (rect.width / 0.036) * nextZoom;
-    const pxLat = pxLon / 0.7575;
+    const factor = e.deltaY < 0 ? 1.24 : 1 / 1.24;
+    const nextZoom = Math.max(0.85, Math.min(14, view.zoom * factor));
+    const [pxLon, pxLat] = getScales(rect.width, rect.height, nextZoom);
     const rx = mx - rect.width / 2;
     const ry = my - rect.height / 2;
     const rad = (-view.bearing * Math.PI) / 180;
     const dx = rx * Math.cos(rad) - ry * Math.sin(rad);
     const dy = rx * Math.sin(rad) + ry * Math.cos(rad);
-
-    setView((prev) => ({
-      ...prev,
+    setView({
+      ...view,
       zoom: nextZoom,
       centerLon: lonBefore - dx / pxLon,
       centerLat: latBefore + dy / pxLat,
-    }));
+    });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -863,40 +848,45 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     const canvas = canvasRef.current;
     if (!canvas || !bundle) return;
     const rect = canvas.getBoundingClientRect();
+    const d = dragRef.current;
 
-    if (dragRef.current.mode !== 'none') {
-      const dxScreen = e.clientX - dragRef.current.startX;
-      const dyScreen = e.clientY - dragRef.current.startY;
-      if (Math.hypot(dxScreen, dyScreen) > 3) dragRef.current.moved = true;
+    if (d.mode !== 'none') {
+      const dxScreen = e.clientX - d.startX;
+      const dyScreen = e.clientY - d.startY;
+      if (Math.hypot(dxScreen, dyScreen) > 3) d.moved = true;
 
-      if (dragRef.current.mode === 'rotate') {
-        const nextBearing = (dragRef.current.startBearing + dxScreen * 0.55 + 360) % 360;
-        setView((prev) => ({ ...prev, bearing: Math.round(nextBearing) }));
+      if (d.mode === 'rotate') {
+        setView((prev) => ({
+          ...prev,
+          bearing: Math.round((d.startBearing + dxScreen * 0.55 + 360) % 360),
+        }));
         return;
       }
 
-      const pxLon = (rect.width / 0.036) * view.zoom;
-      const pxLat = pxLon / 0.7575;
+      const [pxLon, pxLat] = getScales(rect.width, rect.height, view.zoom);
       const rad = (-view.bearing * Math.PI) / 180;
-      const dxUnrot = dxScreen * Math.cos(rad) - dyScreen * Math.sin(rad);
-      const dyUnrot = dxScreen * Math.sin(rad) + dyScreen * Math.cos(rad);
-
+      const dxU = dxScreen * Math.cos(rad) - dyScreen * Math.sin(rad);
+      const dyU = dxScreen * Math.sin(rad) + dyScreen * Math.cos(rad);
       setView((prev) => ({
         ...prev,
-        centerLon: dragRef.current.startLon - dxUnrot / pxLon,
-        centerLat: dragRef.current.startLat + dyUnrot / pxLat,
+        centerLon: d.startLon - dxU / pxLon,
+        centerLat: d.startLat + dyU / pxLat,
       }));
       return;
     }
 
-    const [lon, lat] = unprojectWith(
-      e.clientX - rect.left,
-      e.clientY - rect.top,
-      rect.width,
-      rect.height,
-      view
-    );
-    const hit = bundle.parcels.find((p) => p.rings.some((r) => pointInRing(lon, lat, r))) ?? null;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const [lon, lat] = unprojectWith(mx, my, rect.width, rect.height, view);
+    let hit: VillageParcel | null = null;
+    let minAc = Infinity;
+    for (const p of bundle.parcels) {
+      if (p.underwater) continue;
+      if (p.acres < minAc && p.rings.some((r) => pointInRing(lon, lat, r))) {
+        hit = p;
+        minAc = p.acres;
+      }
+    }
     setHoveredParcel(hit);
   };
 
@@ -908,169 +898,138 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
   };
 
-  const focusParcelById = (pid: string) => {
-    if (!bundle) return;
-    const found = bundle.parcels.find((p) => p.id === pid);
-    if (!found) return;
-    setSelectedPoi(null);
-    setSelectedParcelId(found.id);
-    setSearchText('');
-    setView((prev) => ({
-      ...prev,
-      zoom: Math.max(prev.zoom, 3.4),
-      centerLon: found.lon,
-      centerLat: found.lat,
-    }));
-  };
-
   const handleFetchDossier = async (addr: string) => {
     setDossierLoading(true);
-    setDossierError(null);
     try {
-      const res = await fetch('/api/parcel-dossier', {
+      const res = await fetch('/api/property/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: addr }),
       });
       const data = (await res.json()) as {
+        ok?: boolean;
         dossier?: OffMarketDossier;
         syncMeta?: SyncMetadata;
-        error?: string;
       };
-      if (!res.ok || !data.dossier) {
-        throw new Error(data.error || 'Lookup unavailable.');
+      if (res.ok && data.dossier) {
+        setDossiersByAddr((prev) => ({ ...prev, [addr.toLowerCase()]: data.dossier! }));
+        if (data.syncMeta) onSyncMetaUpdate(data.syncMeta);
       }
-      setDossiersByAddr((prev) => ({ ...prev, [addr]: data.dossier! }));
-      if (data.syncMeta) onSyncMetaUpdate(data.syncMeta);
-    } catch (err) {
-      setDossierError(err instanceof Error ? err.message : 'Lookup failed');
     } finally {
       setDossierLoading(false);
     }
   };
 
-  const activeDossier = selectedParcel ? dossiersByAddr[selectedParcel.addr] : undefined;
+  const focusParcelById = (parcelId: string) => {
+    if (!bundle) return;
+    const found = bundle.parcels.find((p) => p.id === parcelId);
+    if (!found) return;
+    setSelectedPoi(null);
+    setSelectedParcelId(found.id);
+    setView((prev) => ({
+      ...prev,
+      zoom: Math.max(prev.zoom, 2.5),
+      centerLon: found.lon,
+      centerLat: found.lat,
+    }));
+  };
 
-  if (!bundle) {
-    return (
-      <section className="results-band">
-        <div className="container">
-          <p style={{ color: 'var(--ink-2)' }}>Loading Bellport NY…</p>
-        </div>
-      </section>
-    );
-  }
+  const activeDossier = selectedParcel
+    ? dossiersByAddr[selectedParcel.addr.toLowerCase()]
+    : undefined;
 
   return (
-    <section className="results-band" aria-label="Bellport NY Beach House Map">
+    <section style={{ padding: '20px 0 40px' }}>
       <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Lean Headline & Subheadline */}
-        <div>
-          <h1 style={{ fontSize: 'var(--fs-h2)', margin: 0 }}>Bellport NY</h1>
-          <p style={{ color: 'var(--ink-2)', margin: '2px 0 0', fontSize: 16 }}>
-            Search for a beach house
-          </p>
-        </div>
+        {/* Clean Unified Filter Bar */}
+        <UnifiedFilterBar
+          filters={unifiedFilters}
+          onChange={onChangeUnifiedFilters}
+          context="map"
+        />
 
-        {/* Clean Single-Row MECE Dropdown Menu Bar */}
+        {/* Minimal Map Key (No Golf & Parks clutter; Built/Sold shown only when active!) */}
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            gap: 10,
             flexWrap: 'wrap',
+            gap: 10,
+            fontSize: 12,
+            color: 'var(--ink-2)',
           }}
         >
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <MeceFilterDropdown
-              label="Status"
-              options={STATUS_OPTIONS}
-              selected={statusSet}
-              onChange={setStatusSet}
-            />
-            <MeceFilterDropdown
-              label="Price"
-              options={PRICE_OPTIONS}
-              selected={priceSet}
-              onChange={setPriceSet}
-            />
-            <MeceFilterDropdown
-              label="Size"
-              options={SIZE_OPTIONS}
-              selected={sizeSet}
-              onChange={setSizeSet}
-            />
-            <MeceFilterDropdown
-              label="Lot"
-              options={LOT_OPTIONS}
-              selected={lotSet}
-              onChange={setLotSet}
-            />
-            <MeceFilterDropdown
-              label="Area"
-              options={AREA_OPTIONS}
-              selected={areaSet}
-              onChange={setAreaSet}
-            />
-            <MeceFilterDropdown
-              label="Features"
-              options={FEATURE_OPTIONS}
-              selected={featureSet}
-              onChange={setFeatureSet}
-            />
-
-            {hasAnyFilter && (
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={resetAllFilters}
-                style={{ height: 36 }}
-              >
-                <RotateCcw size={13} />
-                <span>Reset</span>
-              </button>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span
+                style={{
+                  width: 11,
+                  height: 11,
+                  borderRadius: 3,
+                  background: '#9be3b0',
+                  border: '1px solid #1f7a46',
+                }}
+              />
+              For Sale
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span
+                style={{
+                  width: 11,
+                  height: 11,
+                  borderRadius: 3,
+                  background: '#e6e8ec',
+                  border: '1px solid #cfd4dc',
+                }}
+              />
+              Off-Market
+            </span>
+            {unifiedFilters.soldRecent && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{
+                    width: 11,
+                    height: 11,
+                    borderRadius: 3,
+                    background: '#9cd3e8',
+                    border: '1px solid #1e6b8c',
+                  }}
+                />
+                Sold ≤{unifiedFilters.soldYears}y
+              </span>
+            )}
+            {unifiedFilters.builtRecent && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{
+                    width: 11,
+                    height: 11,
+                    borderRadius: 3,
+                    background: '#f7d98c',
+                    border: '1px solid #b07412',
+                  }}
+                />
+                Built ≤{unifiedFilters.builtYears}y
+              </span>
             )}
           </div>
-
-          {/* Compact Lot Legend / Match Count */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12 }}>
-            {hasAnyFilter ? (
-              <strong style={{ color: 'var(--accent)' }}>{matchedIds.size} matching lots</strong>
-            ) : (
-              <>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span
-                    style={{ width: 10, height: 10, borderRadius: 2, background: '#f28b82' }}
-                  />
-                  For Sale ({bundle.counts.for_sale})
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span
-                    style={{ width: 10, height: 10, borderRadius: 2, background: '#fde293' }}
-                  />
-                  Built ≤3y ({bundle.counts.built_3yr})
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span
-                    style={{ width: 10, height: 10, borderRadius: 2, background: '#81c995' }}
-                  />
-                  Sold ≤3y ({bundle.counts.sold_3yr})
-                </span>
-              </>
-            )}
-          </div>
+          {filtering && (
+            <strong style={{ color: 'var(--accent)' }}>
+              {matchedIds.size} matching {matchedIds.size === 1 ? 'home' : 'homes'}
+            </strong>
+          )}
         </div>
 
-        {/* Map + Lean Property Card */}
+        {/* Full-Town Map + Side Property Card */}
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: 'minmax(0, 1fr) 340px',
-            gap: 16,
+            gap: 18,
             alignItems: 'start',
           }}
-          className="village-map-grid"
+          className="parcel-map-layout"
         >
           <div
             style={{
@@ -1078,19 +1037,12 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               borderRadius: 'var(--radius)',
               overflow: 'hidden',
               border: '1px solid var(--line)',
-              background: '#e3e6eb',
-              height: 580,
+              background: '#dde1e5',
+              height: 560,
             }}
           >
             <canvas
               ref={canvasRef}
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'block',
-                cursor: 'grab',
-                touchAction: 'none',
-              }}
               onContextMenu={(e) => e.preventDefault()}
               onWheel={handleWheel}
               onMouseDown={handleMouseDown}
@@ -1100,42 +1052,43 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 dragRef.current.mode = 'none';
                 setHoveredParcel(null);
               }}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'block',
+                touchAction: 'none',
+                userSelect: 'none',
+                cursor: hoveredParcel ? 'pointer' : 'grab',
+              }}
             />
 
-            {/* Address Search */}
-            <div style={{ position: 'absolute', top: 12, left: 12, width: 230, zIndex: 5 }}>
-              <div style={{ position: 'relative' }}>
-                <Search
-                  size={14}
-                  style={{ position: 'absolute', left: 12, top: 11, color: '#5f6368' }}
-                />
-                <input
-                  type="search"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search address…"
-                  style={{
-                    width: '100%',
-                    height: 36,
-                    paddingLeft: 34,
-                    paddingRight: 10,
-                    borderRadius: 999,
-                    border: '1px solid #dadce0',
-                    background: '#ffffff',
-                    color: '#202124',
-                    fontSize: 12,
-                    boxShadow: '0 2px 6px rgba(60,64,67,0.14)',
-                  }}
-                />
-              </div>
+            {/* Street Address Jump */}
+            <div style={{ position: 'absolute', top: 12, left: 12, width: 225 }}>
+              <input
+                type="search"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Jump to street address…"
+                style={{
+                  width: '100%',
+                  height: 34,
+                  padding: '0 12px',
+                  borderRadius: 999,
+                  border: '1px solid var(--line)',
+                  background: 'rgba(255,255,255,0.95)',
+                  color: '#18232c',
+                  fontSize: 12,
+                  boxShadow: 'var(--shadow-1)',
+                }}
+              />
               {searchMatches.length > 0 && (
                 <div
                   style={{
                     marginTop: 6,
                     borderRadius: 14,
                     background: '#ffffff',
-                    border: '1px solid #dadce0',
-                    boxShadow: '0 4px 14px rgba(60,64,67,0.18)',
+                    border: '1px solid var(--line)',
+                    boxShadow: 'var(--shadow-2)',
                     overflow: 'hidden',
                   }}
                 >
@@ -1143,29 +1096,31 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => focusParcelById(m.id)}
+                      onClick={() => {
+                        focusParcelById(m.id);
+                        setSearchText('');
+                      }}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
                         width: '100%',
                         padding: '8px 12px',
-                        border: 'none',
-                        borderBottom: '1px solid #f1f3f4',
+                        textAlign: 'left',
                         background: 'transparent',
-                        color: '#202124',
+                        border: 'none',
+                        borderBottom: '1px solid var(--line)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
                         fontSize: 12,
-                        cursor: 'pointer',
                       }}
                     >
                       <strong>{m.addr}</strong>
-                      <span style={{ color: '#5f6368' }}>{m.acres} ac</span>
+                      <span style={{ color: 'var(--ink-2)' }}>{m.acres} ac</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Minimal Zoom & Spin Pod */}
+            {/* Minimal Zoom & Spin Controls */}
             <div
               style={{
                 position: 'absolute',
@@ -1174,11 +1129,11 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 4,
-                background: '#ffffff',
-                padding: 6,
+                background: 'rgba(255,255,255,0.95)',
+                padding: 5,
                 borderRadius: 16,
-                border: '1px solid #dadce0',
-                boxShadow: '0 2px 6px rgba(60,64,67,0.14)',
+                border: '1px solid var(--line)',
+                boxShadow: 'var(--shadow-1)',
                 alignItems: 'center',
               }}
             >
@@ -1186,8 +1141,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 type="button"
                 className="icon-btn"
                 aria-label="Zoom in"
-                style={{ color: '#202124', borderColor: 'transparent', width: 32, height: 32 }}
-                onClick={() => setView((v) => ({ ...v, zoom: Math.min(12, v.zoom * 1.35) }))}
+                style={{ borderColor: 'transparent', width: 30, height: 30 }}
+                onClick={() => setView((v) => ({ ...v, zoom: Math.min(14, v.zoom * 1.38) }))}
               >
                 <Plus size={15} />
               </button>
@@ -1195,18 +1150,17 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 type="button"
                 className="icon-btn"
                 aria-label="Zoom out"
-                style={{ color: '#202124', borderColor: 'transparent', width: 32, height: 32 }}
-                onClick={() => setView((v) => ({ ...v, zoom: Math.max(0.9, v.zoom / 1.35) }))}
+                style={{ borderColor: 'transparent', width: 30, height: 30 }}
+                onClick={() => setView((v) => ({ ...v, zoom: Math.max(0.85, v.zoom / 1.38) }))}
               >
                 <Minus size={15} />
               </button>
-              <div style={{ width: '100%', height: 1, background: '#f1f3f4' }} />
+              <div style={{ width: '100%', height: 1, background: 'var(--line)' }} />
               <div style={{ display: 'flex', gap: 2 }}>
                 <button
                   type="button"
                   className="icon-btn"
-                  title="Rotate left"
-                  style={{ color: '#202124', borderColor: 'transparent', width: 28, height: 28 }}
+                  style={{ borderColor: 'transparent', width: 26, height: 26 }}
                   onClick={() =>
                     setView((v) => ({ ...v, bearing: (v.bearing - 45 + 360) % 360 }))
                   }
@@ -1216,8 +1170,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 <button
                   type="button"
                   className="icon-btn"
-                  title="Rotate right"
-                  style={{ color: '#202124', borderColor: 'transparent', width: 28, height: 28 }}
+                  style={{ borderColor: 'transparent', width: 26, height: 26 }}
                   onClick={() => setView((v) => ({ ...v, bearing: (v.bearing + 45) % 360 }))}
                 >
                   <RotateCw size={13} />
@@ -1226,16 +1179,10 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               <button
                 type="button"
                 className="icon-btn"
-                title="Reset North"
-                style={{
-                  color: '#202124',
-                  borderColor: 'transparent',
-                  height: 26,
-                  fontSize: 11,
-                  fontFamily: 'var(--font-mono)',
-                }}
+                title="Reset Full Town View"
+                style={{ borderColor: 'transparent', height: 26, fontSize: 11 }}
                 onClick={() =>
-                  setView({ zoom: 1.26, centerLon: -72.9408, centerLat: 40.7528, bearing: 0 })
+                  setView({ zoom: 1.0, centerLon: -72.9416, centerLat: 40.7532, bearing: 0 })
                 }
               >
                 <Compass size={13} />
@@ -1250,10 +1197,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   bottom: 12,
                   padding: '6px 12px',
                   borderRadius: 999,
-                  background: '#ffffff',
-                  color: '#202124',
-                  border: '1px solid #dadce0',
-                  boxShadow: '0 2px 6px rgba(60,64,67,0.14)',
+                  background: 'rgba(255,255,255,0.95)',
+                  border: '1px solid var(--line)',
+                  boxShadow: 'var(--shadow-1)',
                   fontSize: 12,
                   pointerEvents: 'none',
                 }}
@@ -1261,16 +1207,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 <strong>{hoveredParcel.poiName ?? hoveredParcel.addr}</strong> ·{' '}
                 {hoveredParcel.acres} ac
                 {hoveredParcel.val && hoveredParcel.res ? (
-                  <span className="priv-val">
-                    {' '}
-                    · ${(hoveredParcel.val / 1_000_000).toFixed(2)}M
-                  </span>
+                  <span className="priv-val"> · {fmtShortDollar(hoveredParcel.val)}</span>
                 ) : null}
               </div>
             )}
           </div>
 
-          {/* Lean Side Property Card */}
+          {/* Selected Home Dossier (Works for ANY of the 1,058 homes including gray off-market homes!) */}
           <aside
             style={{
               borderRadius: 'var(--radius)',
@@ -1280,48 +1223,66 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: 12,
-              maxHeight: 580,
+              maxHeight: 560,
               overflowY: 'auto',
             }}
           >
             {selectedPoi ? (
               <>
-                <h2 style={{ fontSize: 20, margin: 0 }}>{selectedPoi.name}</h2>
-                <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: 0 }}>
-                  {selectedPoi.addr}
-                </p>
-                <p style={{ fontSize: 13, lineHeight: 1.5, margin: 0 }}>{selectedPoi.desc}</p>
-                <a
-                  href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selectedPoi.lat},${selectedPoi.lon}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="icon-btn"
-                  style={{ justifyContent: 'center', textDecoration: 'none' }}
-                >
-                  <MapPin size={14} />
-                  <span>Street View</span>
-                  <ExternalLink size={12} />
-                </a>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className="badge">Village Landmark</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPoi(null);
+                      setSelectedParcelId(null);
+                    }}
+                    style={{ background: 'none', border: 'none' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <h2 style={{ fontSize: 20 }}>{selectedPoi.name}</h2>
+                <p style={{ fontSize: 12, color: 'var(--ink-2)' }}>{selectedPoi.addr}</p>
+                <p style={{ fontSize: 13, lineHeight: 1.5 }}>{selectedPoi.desc}</p>
               </>
-            ) : !selectedParcel ? (
-              <p style={{ color: 'var(--ink-2)', fontSize: 13 }}>Tap any lot on the map.</p>
+            ) : !selectedHome ? (
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <h2 style={{ fontSize: 19, color: 'var(--ink)' }}>Click any home on the map</h2>
+                <p style={{ lineHeight: 1.55 }}>
+                  Tap any light-green listing or any gray off-market home across Bellport Village to
+                  inspect its lot size, architectural profile, estimated value, and sale history.
+                </p>
+              </div>
             ) : (
               <>
-                <div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                    <span
-                      className="badge"
-                      style={{
-                        background: LOT_COLORS[selectedParcel.cat].badge,
-                        color: selectedParcel.cat === 'built_3yr' ? '#202124' : '#ffffff',
-                        border: 'none',
-                      }}
-                    >
-                      {LOT_COLORS[selectedParcel.cat].label}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <span className={`badge ${selectedHome.isForSale ? 'badge--village' : ''}`}>
+                      {selectedHome.isForSale
+                        ? 'For Sale'
+                        : selectedHome.hasPastSale
+                          ? `Sold ${selectedHome.soldYear}`
+                          : 'Off-Market Home'}
                     </span>
-                    {matchedListing && (() => {
-                      const val = evaluateGoodDeal(matchedListing, listings);
-                      return (
+                    <span className="badge">{selectedHome.area}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedParcelId(null)}
+                    style={{ background: 'none', border: 'none' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                <div>
+                  <h2 style={{ fontSize: 20, marginBottom: 2 }}>{selectedHome.address}</h2>
+                  <p style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{selectedHome.style}</p>
+                  {selectedHome.isForSale && (() => {
+                    const val = evaluateGoodDeal(toPseudoListing(selectedHome), listings);
+                    return (
+                      <div style={{ marginTop: 6 }}>
                         <span
                           className={`badge priv-val ${
                             val.status === 'underpriced'
@@ -1333,22 +1294,12 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                         >
                           {val.badgeLabel}
                         </span>
-                      );
-                    })()}
-                  </div>
-                  <h2 style={{ fontSize: 20, margin: '2px 0' }}>{selectedParcel.addr}</h2>
-                  <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: 0 }}>
-                    {selectedParcel.area}
-                    {matchedListing ? ` · ${matchedListing.style}` : ''}
-                  </p>
-                  {matchedListing && (matchedListing.styleSummary || matchedListing.headline) && (
-                    <p style={{ fontSize: 12.5, lineHeight: 1.45, margin: '6px 0 0', color: 'var(--ink)' }}>
-                      {matchedListing.styleSummary ?? matchedListing.headline}
-                    </p>
-                  )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {matchedListing?.photoUrl && (
+                {selectedHome.photoUrl && (
                   <div
                     style={{
                       borderRadius: 12,
@@ -1357,15 +1308,19 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                       cursor: 'pointer',
                       border: '1px solid var(--line)',
                     }}
-                    onClick={() => onOpenListingDrawer(matchedListing.id)}
+                    onClick={() => onOpenHomeDrawer(selectedHome.parcelId)}
                   >
                     <img
-                      src={matchedListing.photoUrl}
-                      alt={selectedParcel.addr}
+                      src={selectedHome.photoUrl}
+                      alt={selectedHome.address}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   </div>
                 )}
+
+                <p style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+                  {selectedHome.styleSummary}
+                </p>
 
                 <div
                   style={{
@@ -1374,82 +1329,63 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                     gap: 10,
                     padding: 12,
                     borderRadius: 12,
-                    background: 'var(--bg-band)',
+                    background: 'var(--surface-subtle)',
                     border: '1px solid var(--line)',
                     fontSize: 12,
                   }}
                 >
                   <div>
                     <span style={{ color: 'var(--ink-2)', display: 'block' }}>
-                      {selectedParcel.cat === 'for_sale' ? 'Price' : 'Est. Value'}
+                      {selectedHome.isForSale ? 'Asking Price' : 'Est. Market Value'}
                     </span>
                     <strong className="priv-val" style={{ fontSize: 15, fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.val ? `$${selectedParcel.val.toLocaleString()}` : '—'}
+                      ${selectedHome.price.toLocaleString()}
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Lot</span>
+                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Lot Size</span>
                     <strong style={{ fontSize: 15, fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.acres} ac
+                      {selectedHome.lotAcres} ac
                     </strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--ink-2)', display: 'block' }}>Size</span>
                     <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.beds ? `${selectedParcel.beds} bd · ` : ''}
-                      {selectedParcel.sqft ? `${selectedParcel.sqft.toLocaleString()} ft²` : '—'}
+                      {selectedHome.beds} bd · {selectedHome.baths} ba ·{' '}
+                      {selectedHome.sqft.toLocaleString()} ft²
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Year</span>
-                    <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.yr ?? '—'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Marina Walk</span>
-                    <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.walkMin} min
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Last Sale</span>
-                    <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.soldPrice
-                        ? `$${Math.round(selectedParcel.soldPrice / 1000)}k (${selectedParcel.soldDate?.slice(0, 4)})`
-                        : selectedParcel.soldDate ?? '—'}
-                    </strong>
+                    <span style={{ color: 'var(--ink-2)', display: 'block' }}>Year Built</span>
+                    <strong style={{ fontFamily: 'var(--font-mono)' }}>{selectedHome.yearBuilt}</strong>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {selectedParcel.pool && <span className="tag-pill">Pool</span>}
-                  {selectedParcel.waterfront && <span className="tag-pill">Waterfront</span>}
-                  {selectedParcel.absentee && <span className="tag-pill">2nd-Home Owner</span>}
-                  {selectedParcel.mail && (
-                    <span className="tag-pill">Tax Mail: {selectedParcel.mail}</span>
-                  )}
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {selectedHome.feats.slice(0, 6).map((fk) => (
+                    <span key={fk} className="tag-pill">
+                      {DESIGN_FEATURE_LABELS[fk] ?? fk}
+                    </span>
+                  ))}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {matchedListing && (
-                    <button
-                      type="button"
-                      className="icon-btn icon-btn--primary"
-                      style={{ justifyContent: 'center' }}
-                      onClick={() => onOpenListingDrawer(matchedListing.id)}
-                    >
-                      <span>View Photos &amp; Details</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--primary"
+                    style={{ justifyContent: 'center' }}
+                    onClick={() => onOpenHomeDrawer(selectedHome.parcelId)}
+                  >
+                    <span>Full Property Details →</span>
+                  </button>
 
-                  {!matchedListing && selectedParcel.res && (
+                  {!selectedHome.listingRef && (
                     <button
                       type="button"
                       className="icon-btn"
                       style={{ justifyContent: 'center' }}
                       disabled={dossierLoading}
-                      onClick={() => void handleFetchDossier(selectedParcel.addr)}
+                      onClick={() => void handleFetchDossier(selectedHome.address)}
                     >
                       <History size={14} />
                       <span>
@@ -1457,13 +1393,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                           ? 'Loading…'
                           : activeDossier
                             ? 'Past History Loaded'
-                            : 'Load Past Sales & Taxes'}
+                            : 'Load Past Deed & Tax History'}
                       </span>
                     </button>
                   )}
 
                   <a
-                    href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selectedParcel.lat},${selectedParcel.lon}`}
+                    href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selectedHome.lat},${selectedHome.lon}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="icon-btn"
@@ -1474,42 +1410,6 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                     <ExternalLink size={12} />
                   </a>
                 </div>
-
-                {dossierError && (
-                  <p style={{ fontSize: 12, color: 'var(--g-red-600)', margin: 0 }}>
-                    {dossierError}
-                  </p>
-                )}
-
-                {activeDossier && (
-                  <div
-                    style={{
-                      padding: 10,
-                      borderRadius: 12,
-                      background: 'var(--bg-band)',
-                      border: '1px solid var(--line)',
-                      fontSize: 12,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                    }}
-                  >
-                    {activeDossier.propertyHistory.slice(0, 5).map((ev, i) => (
-                      <div
-                        key={`${ev.date}-${i}`}
-                        className="priv-val"
-                        style={{ display: 'flex', justifyContent: 'space-between' }}
-                      >
-                        <span>
-                          {ev.date} · {ev.event}
-                        </span>
-                        <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                          {ev.price ? `$${ev.price.toLocaleString()}` : '—'}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </>
             )}
           </aside>

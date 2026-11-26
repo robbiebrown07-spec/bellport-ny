@@ -6,6 +6,9 @@ export type UserTrackStatus = 'shortlist' | 'watching' | 'unreviewed' | 'pass';
 
 export type BellportMicroArea =
   | 'Historic Lanes'
+  | 'South Howells & Bay'
+  | 'Country Club & West'
+  | 'Village North & East'
   | 'Country Club & Golf'
   | 'Village Center'
   | 'East Lanes & Circuit'
@@ -36,11 +39,12 @@ export interface PricePoint {
 }
 
 export interface Listing {
-  id: string; // Immutable slug — never rename once persisted overrides exist
-  externalId?: string; // Realtor/Redfin property_id for safe sync deduplication
+  id: string;
+  externalId?: string;
   address: string;
   area: BellportMicroArea;
-  inVillage: boolean; // True = Incorporated Village of Bellport (Ho-Hum ferry + Marina + Country Club resident rates)
+  belowSC?: boolean;
+  inVillage: boolean;
   latitude?: number;
   longitude?: number;
   marketStatus: MarketStatus;
@@ -49,6 +53,7 @@ export interface Listing {
   price: number;
   originalPrice?: number;
   soldPrice?: number;
+  soldDate?: string;
   priceHistory?: PricePoint[];
   beds: number;
   baths: number;
@@ -59,18 +64,19 @@ export interface Listing {
   floodZone: FloodZone;
   walkToMarinaMin?: number;
   daysOnMarket: number;
-  listedDate: string; // ISO YYYY-MM-DD
+  listedDate: string;
   style: string;
   styleSummary?: string;
   archetype: ArchetypeIllustration;
   headline: string;
   description: string;
   features: string[];
+  feats?: string[];
   brokerage: string;
   mlsId?: string;
   sourceUrl?: string;
   photoUrl?: string;
-  photos?: string[]; // Full photo gallery URLs
+  photos?: string[];
   personalNotes: string;
   lastSyncedAt?: string;
   isSample?: boolean;
@@ -78,7 +84,7 @@ export interface Listing {
 
 export interface StreetAlertRule {
   id: string;
-  street: string; // e.g. "Bellport Lane", "Browns Lane", "South Howells Point"
+  street: string;
   maxPrice: number | null;
   minBeds: number | null;
   mustHaveKeyword: string;
@@ -96,6 +102,8 @@ export interface VillageParcel {
   sbl: string;
   addr: string;
   area: BellportMicroArea;
+  belowSC?: boolean;
+  underwater?: boolean;
   cat: ParcelStatusCategory;
   cls: string;
   clsLabel: string;
@@ -110,6 +118,7 @@ export interface VillageParcel {
   est4br: boolean;
   yr?: number | null;
   sqft?: number | null;
+  fpSqft?: number;
   val?: number | null;
   mktVal: number;
   av: number;
@@ -128,6 +137,9 @@ export interface VillageParcel {
   mlsPhotos: number;
   pastRemarks?: string | null;
   sourceUrl?: string | null;
+  style?: string;
+  styleSummary?: string;
+  feats?: string[];
   poiKind?: VillagePoiKind;
   poiName?: string;
   rings: number[][][];
@@ -147,6 +159,7 @@ export interface HistoricalSaleRecord {
   yearBuilt?: number | null;
   inVillage: boolean;
   area: BellportMicroArea;
+  belowSC?: boolean;
   pool: boolean;
   ppsf?: number | null;
   parcelId?: string | null;
@@ -197,6 +210,7 @@ export interface VillageParcelsBundle {
   boundaryRings: number[][][];
   waterRings?: number[][][];
   outsideBldgs?: number[][][];
+  southCountryLine?: number[][];
   streets: VillageStreet[];
   streetLabels: VillageStreetLabel[];
   pois: VillagePoi[];

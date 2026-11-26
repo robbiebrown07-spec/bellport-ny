@@ -3,67 +3,11 @@ import { scaleLinear } from 'd3-scale';
 import { median } from 'd3-array';
 import { RotateCcw } from 'lucide-react';
 import type { HistoricalSaleRecord } from '../types';
-import { MeceFilterDropdown, type MeceBucketOption } from './MeceFilterDropdown';
+import { fmtShortDollar, MECE_VILLAGE_AREAS, parseFlexibleNumber } from '../lib/unifiedCatalog';
 
 interface SalesOverTimeModuleProps {
   privacyBlur: boolean;
   onSelectParcel?: (parcelId: string) => void;
-}
-
-const AREA_OPTIONS: MeceBucketOption[] = [
-  { value: 'Historic Lanes', label: 'Historic Lanes' },
-  { value: 'Country Club & Golf', label: 'Country Club & Golf' },
-  { value: 'Village Center', label: 'Village Center' },
-  { value: 'East Lanes & Circuit', label: 'East Lanes & Circuit' },
-];
-
-const SIZE_OPTIONS: MeceBucketOption[] = [
-  { value: 's1', label: '< 1,800 ft² (1–2 BR)' },
-  { value: 's2', label: '1,800 – 2,349 ft² (3 BR)' },
-  { value: 's3', label: '2,350 – 3,499 ft² (4 BR)' },
-  { value: 's4', label: '3,500+ ft² (5+ BR)' },
-];
-
-const PRICE_OPTIONS: MeceBucketOption[] = [
-  { value: 'p1', label: 'Under $1M' },
-  { value: 'p2', label: '$1M – $2M' },
-  { value: 'p3', label: '$2M – $3M' },
-  { value: 'p4', label: '$3M+' },
-];
-
-const LOT_OPTIONS: MeceBucketOption[] = [
-  { value: 'l1', label: '< 0.35 ac' },
-  { value: 'l2', label: '0.35 – 0.49 ac' },
-  { value: 'l3', label: '0.50 – 0.99 ac' },
-  { value: 'l4', label: '1.00+ ac' },
-];
-
-const POOL_OPTIONS: MeceBucketOption[] = [
-  { value: 'yes', label: 'With Pool' },
-  { value: 'no', label: 'No Pool' },
-];
-
-function sizeBucket(s: HistoricalSaleRecord): string {
-  const sf = s.sqft ?? (s.beds ? s.beds * 620 : 2000);
-  if (sf < 1800) return 's1';
-  if (sf < 2350) return 's2';
-  if (sf < 3500) return 's3';
-  return 's4';
-}
-
-function priceBucket(price: number): string {
-  if (price < 1_000_000) return 'p1';
-  if (price < 2_000_000) return 'p2';
-  if (price < 3_000_000) return 'p3';
-  return 'p4';
-}
-
-function lotBucket(acres?: number | null): string {
-  const a = acres ?? 0.32;
-  if (a < 0.35) return 'l1';
-  if (a < 0.5) return 'l2';
-  if (a < 1.0) return 'l3';
-  return 'l4';
 }
 
 function dateToYearFloat(iso: string): number {
@@ -77,11 +21,12 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
 }) => {
   const [sales, setSales] = useState<HistoricalSaleRecord[]>([]);
   const [metric, setMetric] = useState<'price' | 'ppsf'>('price');
-  const [areaSet, setAreaSet] = useState<Set<string>>(() => new Set());
-  const [sizeSet, setSizeSet] = useState<Set<string>>(() => new Set());
-  const [priceSet, setPriceSet] = useState<Set<string>>(() => new Set());
-  const [lotSet, setLotSet] = useState<Set<string>>(() => new Set());
-  const [poolSet, setPoolSet] = useState<Set<string>>(() => new Set());
+  const [belowSC, setBelowSC] = useState(false);
+  const [area, setArea] = useState('');
+  const [minPrice, setMinPrice] = useState<number | null>(null);
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  const [minSqft, setMinSqft] = useState<number | null>(null);
+  const [minLot, setMinLot] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,14 +45,15 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   const filtered = useMemo(() => {
     return sales.filter((s) => {
       if (metric === 'ppsf' && (!s.ppsf || s.ppsf <= 0)) return false;
-      if (areaSet.size > 0 && !areaSet.has(s.area)) return false;
-      if (sizeSet.size > 0 && !sizeSet.has(sizeBucket(s))) return false;
-      if (priceSet.size > 0 && !priceSet.has(priceBucket(s.price))) return false;
-      if (lotSet.size > 0 && !lotSet.has(lotBucket(s.acres))) return false;
-      if (poolSet.size > 0 && !poolSet.has(s.pool ? 'yes' : 'no')) return false;
+      if (belowSC && !s.belowSC) return false;
+      if (area && s.area !== area) return false;
+      if (minPrice !== null && s.price < minPrice) return false;
+      if (maxPrice !== null && s.price > maxPrice) return false;
+      if (minSqft !== null && (s.sqft ?? 1800) < minSqft) return false;
+      if (minLot !== null && (s.acres ?? 0.3) < minLot) return false;
       return true;
     });
-  }, [sales, metric, areaSet, sizeSet, priceSet, lotSet, poolSet]);
+  }, [sales, metric, belowSC, area, minPrice, maxPrice, minSqft, minLot]);
 
   const yearlyMedians = useMemo(() => {
     const byYr = new Map<number, number[]>();
@@ -130,18 +76,15 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   }, [filtered, metric]);
 
   const hasFilters =
-    areaSet.size > 0 ||
-    sizeSet.size > 0 ||
-    priceSet.size > 0 ||
-    lotSet.size > 0 ||
-    poolSet.size > 0;
+    belowSC || area !== '' || minPrice !== null || maxPrice !== null || minSqft !== null || minLot !== null;
 
   const resetFilters = () => {
-    setAreaSet(new Set());
-    setSizeSet(new Set());
-    setPriceSet(new Set());
-    setLotSet(new Set());
-    setPoolSet(new Set());
+    setBelowSC(false);
+    setArea('');
+    setMinPrice(null);
+    setMaxPrice(null);
+    setMinSqft(null);
+    setMinLot(null);
   };
 
   const latestMedian = yearlyMedians[yearlyMedians.length - 1]?.medianVal ?? 0;
@@ -152,7 +95,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
       : null;
 
   const W = 940;
-  const H = 310;
+  const H = 300;
   const m = { top: 20, right: 26, bottom: 36, left: 68 };
   const iw = W - m.left - m.right;
   const ih = H - m.top - m.bottom;
@@ -161,10 +104,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
   const maxVal = yValues.length ? Math.max(...yValues) : metric === 'ppsf' ? 1200 : 4_000_000;
 
   const xScale = scaleLinear().domain([2017, 2027]).range([0, iw]);
-  const yScale = scaleLinear()
-    .domain([0, maxVal * 1.1])
-    .range([ih, 0])
-    .nice();
+  const yScale = scaleLinear().domain([0, maxVal * 1.1]).range([ih, 0]).nice();
 
   const xYears = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
   const yTicks = yScale.ticks(5);
@@ -174,10 +114,21 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
     .map((pt, i) => `${i === 0 ? 'M' : 'L'}${xScale(pt.x).toFixed(1)},${yScale(pt.medianVal).toFixed(1)}`)
     .join(' ');
 
+  const pillInputStyle: React.CSSProperties = {
+    height: 32,
+    width: 92,
+    padding: '0 10px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: 'var(--bg)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+  };
+
   return (
     <div
       style={{
-        padding: 20,
+        padding: 22,
         borderRadius: 'var(--radius)',
         background: 'var(--surface)',
         border: '1px solid var(--line)',
@@ -186,7 +137,6 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
         gap: 14,
       }}
     >
-      {/* Lean Header + KPI Strip */}
       <div
         style={{
           display: 'flex',
@@ -197,17 +147,15 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
         }}
       >
         <div>
-          <h2 style={{ fontSize: 20, margin: 0 }}>Home Prices Over Time</h2>
-          <p style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 0' }}>
-            {filtered.length} closed sales (2017–2026)
+          <h2 style={{ fontSize: 22, margin: 0 }}>Home Prices Over Time</h2>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: '2px 0 0' }}>
+            {filtered.length} closed Bellport Village sales (2017–2026)
             {latestMedian > 0 && (
               <span className="priv-val">
                 {' '}
                 · Latest median{' '}
-                <strong>
-                  {metric === 'ppsf'
-                    ? `$${latestMedian}/ft²`
-                    : `$${(latestMedian / 1_000_000).toFixed(2)}M`}
+                <strong style={{ color: 'var(--ink)' }}>
+                  {metric === 'ppsf' ? `$${latestMedian}/ft²` : fmtShortDollar(latestMedian)}
                 </strong>
               </span>
             )}
@@ -240,50 +188,74 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
         </div>
       </div>
 
-      {/* Clean MECE Dropdown Bar */}
+      {/* Compact Range & Area Filters */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <MeceFilterDropdown
-          label="Area"
-          options={AREA_OPTIONS}
-          selected={areaSet}
-          onChange={setAreaSet}
+        <button
+          type="button"
+          onClick={() => setBelowSC((v) => !v)}
+          style={{
+            height: 32,
+            padding: '0 12px',
+            borderRadius: 999,
+            border: belowSC ? '1px solid var(--accent)' : '1px solid var(--line)',
+            background: belowSC ? 'var(--accent)' : 'var(--bg)',
+            color: belowSC ? '#ffffff' : 'var(--ink)',
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          Below South Country Rd
+        </button>
+
+        <select
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          style={{ ...pillInputStyle, width: 'auto', fontFamily: 'var(--font-text)' }}
+        >
+          <option value="">All Village Areas</option>
+          {MECE_VILLAGE_AREAS.map((a) => (
+            <option key={a.value} value={a.value}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="text"
+          placeholder="Min $"
+          onChange={(e) => setMinPrice(parseFlexibleNumber(e.target.value))}
+          style={pillInputStyle}
         />
-        <MeceFilterDropdown
-          label="Size"
-          options={SIZE_OPTIONS}
-          selected={sizeSet}
-          onChange={setSizeSet}
+        <input
+          type="text"
+          placeholder="Max $"
+          onChange={(e) => setMaxPrice(parseFlexibleNumber(e.target.value))}
+          style={pillInputStyle}
         />
-        <MeceFilterDropdown
-          label="Price"
-          options={PRICE_OPTIONS}
-          selected={priceSet}
-          onChange={setPriceSet}
+        <input
+          type="text"
+          placeholder="Min ft²"
+          onChange={(e) => setMinSqft(parseFlexibleNumber(e.target.value))}
+          style={pillInputStyle}
         />
-        <MeceFilterDropdown
-          label="Lot"
-          options={LOT_OPTIONS}
-          selected={lotSet}
-          onChange={setLotSet}
+        <input
+          type="text"
+          placeholder="Min ac"
+          onChange={(e) => setMinLot(parseFlexibleNumber(e.target.value))}
+          style={{ ...pillInputStyle, width: 78 }}
         />
-        <MeceFilterDropdown
-          label="Pool"
-          options={POOL_OPTIONS}
-          selected={poolSet}
-          onChange={setPoolSet}
-        />
+
         {hasFilters && (
-          <button type="button" className="icon-btn" onClick={resetFilters} style={{ height: 34 }}>
+          <button type="button" className="icon-btn" onClick={resetFilters} style={{ height: 32 }}>
             <RotateCcw size={13} />
             <span>Reset</span>
           </button>
         )}
       </div>
 
-      {/* Interactive Time-Series Chart */}
       {filtered.length === 0 ? (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-2)', fontSize: 13 }}>
-          No closed sales match this filter combination.
+          No closed Village sales match these filters.
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -291,7 +263,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
             viewBox={`0 0 ${W} ${H}`}
             style={{ width: '100%', minWidth: 540, height: 'auto', display: 'block' }}
             role="img"
-            aria-label="Bellport closed home sales over time"
+            aria-label="Bellport Village closed home sales over time"
           >
             <g transform={`translate(${m.left},${m.top})`}>
               {yTicks.map((t) => (
@@ -306,13 +278,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                     fill="var(--ink-2)"
                     className="priv-val"
                   >
-                    {privacyBlur
-                      ? '•••'
-                      : metric === 'ppsf'
-                        ? `$${t}`
-                        : t >= 1_000_000
-                          ? `$${(t / 1_000_000).toFixed(1)}M`
-                          : `$${Math.round(t / 1000)}k`}
+                    {privacyBlur ? '•••' : metric === 'ppsf' ? `$${t}` : fmtShortDollar(t)}
                   </text>
                 </g>
               ))}
@@ -333,7 +299,6 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
 
               <line x1={0} x2={iw} y1={ih} y2={ih} stroke="var(--line-strong)" />
 
-              {/* Annual Median Trend Curve */}
               {yearlyMedians.length >= 2 && (
                 <path
                   d={linePath}
@@ -344,23 +309,20 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                 />
               )}
 
-              {/* Individual Closed Sales */}
               {filtered.map((s) => {
                 const val = metric === 'ppsf' ? (s.ppsf ?? 0) : s.price;
                 const cx = xScale(dateToYearFloat(s.date));
                 const cy = yScale(val);
                 const isHov = hoveredId === s.id;
                 return (
-                  <rect
+                  <circle
                     key={s.id}
-                    x={cx - (isHov ? 5.5 : 4)}
-                    y={cy - (isHov ? 5.5 : 4)}
-                    width={isHov ? 11 : 8}
-                    height={isHov ? 11 : 8}
-                    rx={2}
-                    fill={s.inVillage ? '#34a853' : '#9aa0a6'}
-                    fillOpacity={0.85}
-                    stroke="var(--surface)"
+                    cx={cx}
+                    cy={cy}
+                    r={isHov ? 7 : 5}
+                    fill="#4f9d69"
+                    fillOpacity={0.88}
+                    stroke="#ffffff"
                     strokeWidth={1.5}
                     style={{ cursor: s.parcelId && onSelectParcel ? 'pointer' : 'default' }}
                     onMouseEnter={() => setHoveredId(s.id)}
@@ -372,64 +334,59 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                 );
               })}
 
-              {/* Hover Readout */}
-              {hoveredSale && (
-                <g
-                  transform={`translate(${Math.min(iw - 230, Math.max(8, xScale(dateToYearFloat(hoveredSale.date)) + 10))},${Math.max(8, yScale(metric === 'ppsf' ? (hoveredSale.ppsf ?? 0) : hoveredSale.price) - 42)})`}
-                  style={{ pointerEvents: 'none' }}
-                >
-                  <rect
-                    width={222}
-                    height={46}
-                    rx={10}
-                    fill="var(--surface)"
-                    stroke="var(--line-strong)"
-                  />
-                  <text x={10} y={19} fontSize={12} fontWeight={600} fill="var(--ink)">
-                    {hoveredSale.address.slice(0, 26)}
-                  </text>
-                  <text
-                    x={10}
-                    y={36}
-                    fontSize={11}
-                    fontFamily="var(--font-mono)"
-                    fill="var(--ink-2)"
-                  >
-                    {privacyBlur
-                      ? hoveredSale.date
-                      : `${hoveredSale.date} · $${(hoveredSale.price / 1_000_000).toFixed(2)}M${hoveredSale.sqft ? ` · ${hoveredSale.sqft}ft²` : ''}`}
-                  </text>
-                </g>
-              )}
+              {yearlyMedians.map((pt) => (
+                <circle
+                  key={`med-${pt.year}`}
+                  cx={xScale(pt.x)}
+                  cy={yScale(pt.medianVal)}
+                  r={3.5}
+                  fill="var(--accent)"
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                />
+              ))}
             </g>
           </svg>
-
-          {/* Accessible Summary Table */}
-          <table className="sr-only">
-            <caption>Closed Bellport home sales over time</caption>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Address</th>
-                <th>Area</th>
-                <th>Sale Price</th>
-                <th>Sq Ft</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.date}</td>
-                  <td>{s.address}</td>
-                  <td>{s.area}</td>
-                  <td>${s.price.toLocaleString()}</td>
-                  <td>{s.sqft ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10,
+          fontSize: 12,
+          color: 'var(--ink-2)',
+          minHeight: 20,
+        }}
+      >
+        {hoveredSale ? (
+          <div>
+            <strong style={{ color: 'var(--ink)' }}>{hoveredSale.address}</strong> ·{' '}
+            {hoveredSale.date} ·{' '}
+            <strong className="priv-val" style={{ color: 'var(--ink)' }}>
+              ${hoveredSale.price.toLocaleString()}
+            </strong>
+            {hoveredSale.sqft ? ` · ${hoveredSale.sqft.toLocaleString()} ft²` : ''}
+            {hoveredSale.acres ? ` · ${hoveredSale.acres} ac` : ''} · {hoveredSale.area}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span
+                style={{ width: 9, height: 9, borderRadius: '50%', background: '#4f9d69' }}
+              />
+              Closed Sale (click dot to locate on map)
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 14, height: 2.5, background: 'var(--accent)' }} />
+              Annual Median
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

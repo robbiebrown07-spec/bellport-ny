@@ -13,9 +13,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713077",
-    "ppsf": 242
+    "ppsf": 242,
+    "belowSC": false
   },
   {
     "id": "sale-3614967174",
@@ -31,9 +32,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713108",
-    "ppsf": 262
+    "ppsf": 262,
+    "belowSC": false
   },
   {
     "id": "sale-3798867080",
@@ -49,9 +51,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713589",
-    "ppsf": 278
+    "ppsf": 278,
+    "belowSC": false
   },
   {
     "id": "sale-4723507016",
@@ -67,9 +70,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "Village Center",
+    "area": "Village North & East",
     "parcelId": "p-2713376",
-    "ppsf": 238
+    "ppsf": 238,
+    "belowSC": false
   },
   {
     "id": "sale-3867604371",
@@ -85,9 +89,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "Village Center",
+    "area": "Historic Lanes",
     "parcelId": null,
-    "ppsf": 1333
+    "ppsf": 1333,
+    "belowSC": true
   },
   {
     "id": "sale-3656928626",
@@ -103,9 +108,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2713440",
-    "ppsf": 277
+    "ppsf": 277,
+    "belowSC": false
   },
   {
     "id": "sale-3605538891",
@@ -121,9 +127,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2712993",
-    "ppsf": 195
+    "ppsf": 195,
+    "belowSC": false
   },
   {
     "id": "sale-3595604628",
@@ -139,9 +146,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "Historic Lanes",
+    "area": "South Howells & Bay",
     "parcelId": "p-2713856",
-    "ppsf": 235
+    "ppsf": 235,
+    "belowSC": true
   },
   {
     "id": "sale-4355921171",
@@ -157,9 +165,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713038",
-    "ppsf": 185
+    "ppsf": 185,
+    "belowSC": false
   },
   {
     "id": "sale-3881131908",
@@ -177,7 +186,8 @@
     "source": "OneKeyMLS",
     "area": "Historic Lanes",
     "parcelId": "p-2713910",
-    "ppsf": 556
+    "ppsf": 556,
+    "belowSC": true
   },
   {
     "id": "sale-3068835490",
@@ -193,9 +203,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2712985",
-    "ppsf": 317
+    "ppsf": 317,
+    "belowSC": false
   },
   {
     "id": "sale-4nhowellsptrd-2023",
@@ -211,9 +222,10 @@
     "pool": true,
     "source": "Old Purchase",
     "listPrice": null,
-    "area": "Village Center",
+    "area": "Country Club & West",
     "parcelId": null,
-    "ppsf": 455
+    "ppsf": 455,
+    "belowSC": false
   },
   {
     "id": "sale-90circuitrd-2023",
@@ -229,9 +241,10 @@
     "pool": false,
     "source": "Old Purchase",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2713134",
-    "ppsf": 399
+    "ppsf": 399,
+    "belowSC": false
   },
   {
     "id": "sale-2brooksideave-2024",
@@ -247,9 +260,10 @@
     "pool": false,
     "source": "Old Purchase",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Historic Lanes",
     "parcelId": "p-2713200",
-    "ppsf": 520
+    "ppsf": 520,
+    "belowSC": true
   },
   {
     "id": "sale-3511420864",
@@ -265,9 +279,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "East Lanes & Circuit",
+    "area": "Historic Lanes",
     "parcelId": "p-2713161",
-    "ppsf": 849
+    "ppsf": 849,
+    "belowSC": true
   },
   {
     "id": "sale-23maplewooddr-2024",
@@ -283,9 +298,10 @@
     "pool": true,
     "source": "Old Purchase",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2713242",
-    "ppsf": 466
+    "ppsf": 466,
+    "belowSC": false
   },
   {
     "id": "sale-3746349613",
@@ -301,9 +317,10 @@
     "inVillage": true,
     "pool": false,
     "source": "OneKeyMLS",
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713611",
-    "ppsf": 399
+    "ppsf": 399,
+    "belowSC": false
   },
   {
     "id": "sale-3527673063",
@@ -319,9 +336,10 @@
     "inVillage": true,
     "pool": true,
     "source": "OneKeyMLS",
-    "area": "East Lanes & Circuit",
+    "area": "Historic Lanes",
     "parcelId": "p-2713144",
-    "ppsf": 779
+    "ppsf": 779,
+    "belowSC": true
   },
   {
     "id": "sale-12circuitrd-2024",
@@ -337,9 +355,10 @@
     "pool": true,
     "source": "Old Purchase",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2713563",
-    "ppsf": 645
+    "ppsf": 645,
+    "belowSC": false
   },
   {
     "id": "sale-61countryclubrd-2025",
@@ -355,9 +374,10 @@
     "pool": false,
     "source": "Old Purchase / MLS",
     "listPrice": null,
-    "area": "Country Club & Golf",
+    "area": "Country Club & West",
     "parcelId": "p-2713514",
-    "ppsf": 431
+    "ppsf": 431,
+    "belowSC": false
   },
   {
     "id": "sale-29newjerseyave-2025",
@@ -373,9 +393,10 @@
     "pool": false,
     "source": "NYStateMLS",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2713277",
-    "ppsf": 480
+    "ppsf": 480,
+    "belowSC": false
   },
   {
     "id": "sale-252ndst-2025",
@@ -391,9 +412,10 @@
     "pool": false,
     "source": "NYStateMLS",
     "listPrice": null,
-    "area": "Village Center",
+    "area": "Village North & East",
     "parcelId": "p-2713322",
-    "ppsf": 467
+    "ppsf": 467,
+    "belowSC": false
   },
   {
     "id": "sale-42bieselinrd-2025",
@@ -409,9 +431,10 @@
     "pool": true,
     "source": "MyStateMLS",
     "listPrice": null,
-    "area": "East Lanes & Circuit",
+    "area": "Village North & East",
     "parcelId": "p-2714177",
-    "ppsf": 647
+    "ppsf": 647,
+    "belowSC": false
   },
   {
     "id": "sale-13bellst-2026",
@@ -427,9 +450,10 @@
     "pool": false,
     "source": "NYStateMLS",
     "listPrice": null,
-    "area": "Village Center",
+    "area": "Historic Lanes",
     "parcelId": "p-2713740",
-    "ppsf": 912
+    "ppsf": 912,
+    "belowSC": true
   },
   {
     "id": "sale-4nhowellsptrd-2026",
@@ -445,9 +469,10 @@
     "pool": true,
     "source": "MyStateMLS",
     "listPrice": null,
-    "area": "Village Center",
+    "area": "Country Club & West",
     "parcelId": null,
-    "ppsf": 647
+    "ppsf": 647,
+    "belowSC": false
   },
   {
     "id": "sale-27bellst-2026",
@@ -463,8 +488,9 @@
     "pool": false,
     "source": "Old Purchase / MLS",
     "listPrice": null,
-    "area": "Village Center",
+    "area": "Historic Lanes",
     "parcelId": "p-2713752",
-    "ppsf": 754
+    "ppsf": 754,
+    "belowSC": true
   }
 ]
