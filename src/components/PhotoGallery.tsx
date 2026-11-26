@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import type { ArchetypeIllustration } from '../types';
 import { PropertyIllustration } from './PropertyIllustration';
+import { PhotoLightbox } from './PhotoLightbox';
 
 interface PhotoGalleryProps {
   photos?: string[];
@@ -25,6 +26,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
 
   const [index, setIndex] = useState(0);
   const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const validPhotos = allUrls.filter((u) => !failedUrls[u]);
 
@@ -61,7 +63,14 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
         <img
           src={activeUrl}
           alt={`${address} — photo ${safeIdx + 1} of ${validPhotos.length}`}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          onClick={() => setLightboxOpen(true)}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+            cursor: 'zoom-in',
+          }}
           onError={() =>
             setFailedUrls((prev) => ({
               ...prev,
@@ -69,6 +78,37 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
             }))
           }
         />
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setLightboxOpen(true);
+          }}
+          title="View photo full screen"
+          aria-label="Expand photo full screen"
+          style={{
+            position: 'absolute',
+            left: 12,
+            bottom: 12,
+            height: 32,
+            padding: '0 10px',
+            borderRadius: 999,
+            border: '1px solid rgba(255, 255, 255, 0.35)',
+            background: 'rgba(15, 37, 55, 0.76)',
+            color: '#ffffff',
+            fontSize: 12,
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          <Maximize2 size={13} />
+          <span>Expand</span>
+        </button>
 
         {validPhotos.length > 1 && (
           <>
@@ -133,6 +173,15 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
           </>
         )}
       </div>
+
+      {lightboxOpen && (
+        <PhotoLightbox
+          photos={validPhotos}
+          initialIndex={safeIdx}
+          address={address}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
 
       {validPhotos.length > 1 && (
         <div

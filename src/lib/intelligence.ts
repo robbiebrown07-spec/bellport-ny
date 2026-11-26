@@ -504,7 +504,6 @@ export function synthesizeArchitecturalTaste(
       [/guest\s+cottage|carriage|studio/.test(blob), 'detached guest / carriage studio'],
       [/privet|elm|english\s+garden|hydrangea/.test(blob), 'mature privet & tree canopy'],
       [fav.yearBuilt <= 1935, 'pre-1935 historic pedigree'],
-      [fav.floodZone === 'X', 'high-and-dry Flood Zone X'],
     ];
 
     for (const [hit, label] of checks) {
@@ -548,7 +547,7 @@ export function synthesizeArchitecturalTaste(
 
   const brokerBrief = `We are looking inside the Incorporated Village of Bellport (ideally ${preferredAreas.join(' or ')}) for a ~${Math.round(medianSqft / 100) * 100}+ sq ft residence with ${topTraitNames.slice(0, 3).join(', ')}. Strong preference for ${
     historicShare >= 0.5 ? 'pre-war shingle or clapboard architecture' : 'turnkey cedar or classic village architecture'
-  } on ~0.45+ acres in Flood Zone X with Marina/ferry walkability.`;
+  } on ~0.45+ acres with Marina/ferry walkability.`;
 
   // Score non-favorited active/off-market listings against signature traits
   const recommendations = allListings
@@ -573,7 +572,6 @@ export function synthesizeArchitecturalTaste(
         else if (trait === 'detached guest / carriage studio' && /guest|carriage|studio|pool\s+house/.test(cBlob)) matches = true;
         else if (trait === 'mature privet & tree canopy' && /privet|elm|garden|wooded|cul-de-sac/.test(cBlob)) matches = true;
         else if (trait === 'pre-1935 historic pedigree' && candidate.yearBuilt <= 1938) matches = true;
-        else if (trait === 'high-and-dry Flood Zone X' && candidate.floodZone === 'X') matches = true;
 
         if (matches) {
           pts += weight;

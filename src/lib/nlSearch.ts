@@ -263,32 +263,43 @@ export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery 
     }
   } else {
     const underM = s.match(
-      /\b(?:under|below|less\s+than|max|up\s+to|budget(?:\s+of)?)\s+\$?([\d,.]+)\s*(m|million|k|thousand)?\b/
+      /(?:<=?|≤|\b(?:under|below|less\s+than|max|up\s+to|budget(?:\s+of)?)\s+)\s*\$?([\d,]+(?:\.\d+)?)\s*(m|million|k|thousand)?\b/
     );
     if (underM) {
-      const p = parseDollarToken(
-        underM[1],
-        underM[2] || (Number(underM[1]) < 25 ? 'm' : undefined)
-      );
-      if (p) {
-        res.maxPrice = p;
-        res.chips.push(`Under ${fmtChipDollar(p)}`);
-        consume(
-          /\b(?:under|below|less\s+than|max|up\s+to|budget(?:\s+of)?)\s+\$?[\d,.]+\s*(?:m|million|k|thousand)?\b/g
+      const rawNum = parseFloat(underM[1].replace(/,/g, ''));
+      const hasDollarOrSym = /[$<≤]/.test(underM[0]);
+      if (underM[2] || hasDollarOrSym || rawNum >= 50_000 || rawNum < 25) {
+        const p = parseDollarToken(
+          underM[1],
+          underM[2] || (rawNum < 25 ? 'm' : undefined)
         );
+        if (p) {
+          res.maxPrice = p;
+          res.chips.push(`Under ${fmtChipDollar(p)}`);
+          consume(
+            /(?:<=?|≤|\b(?:under|below|less\s+than|max|up\s+to|budget(?:\s+of)?)\s+)\s*\$?[\d,]+(?:\.\d+)?\s*(?:m|million|k|thousand)?\b/g
+          );
+        }
       }
     }
     const overM = s.match(
-      /\b(?:over|above|more\s+than|min|at\s+least)\s+\$?([\d,.]+)\s*(m|million|k|thousand)\b/
+      /(?:>=?|≥|\b(?:over|above|more\s+than|min|at\s+least)\s+)\s*(\$)?([\d,]+(?:\.\d+)?)\s*(m|million|k|thousand)?\b/
     );
     if (overM) {
-      const p = parseDollarToken(overM[1], overM[2]);
-      if (p && p >= 100_000) {
-        res.minPrice = p;
-        res.chips.push(`Over ${fmtChipDollar(p)}`);
-        consume(
-          /\b(?:over|above|more\s+than|min|at\s+least)\s+\$?[\d,.]+\s*(?:m|million|k|thousand)\b/g
+      const rawNum = parseFloat(overM[2].replace(/,/g, ''));
+      const hasExplicitDollar = Boolean(overM[1] || overM[3] || rawNum >= 100_000);
+      if (hasExplicitDollar) {
+        const p = parseDollarToken(
+          overM[2],
+          overM[3] || (overM[1] && rawNum < 25 ? 'm' : undefined)
         );
+        if (p && p >= 100_000) {
+          res.minPrice = p;
+          res.chips.push(`Over ${fmtChipDollar(p)}`);
+          consume(
+            /(?:>=?|≥|\b(?:over|above|more\s+than|min|at\s+least)\s+)\s*\$?[\d,]+(?:\.\d+)?\s*(?:m|million|k|thousand)?\b/g
+          );
+        }
       }
     }
     const aroundM = s.match(/\baround\s+\$?([\d,.]+)\s*(m|million|k|thousand)\b/);

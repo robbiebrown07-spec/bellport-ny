@@ -77,6 +77,10 @@ function getBasePrefix(): string {
   return base.endsWith('/') ? base : `${base}/`;
 }
 
+function stripZoneX(features: string[]): string[] {
+  return features.filter((f) => !/^(?:flood\s+)?zone\s*x$/i.test(f.trim()));
+}
+
 export async function fetchSeedListings(bustCache = false): Promise<Listing[]> {
   const prefix = getBasePrefix();
   const qs = bustCache ? `?t=${Math.floor(Date.now() / 60_000)}` : '';
@@ -87,6 +91,7 @@ export async function fetchSeedListings(bustCache = false): Promise<Listing[]> {
   const list = (await res.json()) as Listing[];
   return list.map((l) => ({
     ...l,
+    features: stripZoneX(l.features ?? []),
     photoUrl:
       l.photoUrl && !/^(https?:|data:|blob:)/i.test(l.photoUrl)
         ? `${prefix}${l.photoUrl.replace(/^\//, '')}`
@@ -119,7 +124,9 @@ export async function fetchRemoteSyncStatus(): Promise<Partial<SyncMetadata>> {
  * while 100% preserving user favorites, notes, statuses, and custom entries.
  */
 export function mergeRemoteSeedListings(existing: Listing[], remoteSeed: Listing[]): Listing[] {
-  if (remoteSeed.length === 0) return existing;
+  if (remoteSeed.length === 0) {
+    return existing.map((item) => ({ ...item, features: stripZoneX(item.features ?? []) }));
+  }
 
   const byId = new Map<string, Listing>();
   const byAddr = new Map<string, Listing>();
@@ -139,19 +146,26 @@ export function mergeRemoteSeedListings(existing: Listing[], remoteSeed: Listing
         ...prev,
         ...inc,
         id: prev.id,
+        features: stripZoneX(inc.features ?? prev.features ?? []),
         // Strictly preserve all user-owned fields!
         isFavorite: prev.isFavorite,
         userStatus: prev.userStatus,
         personalNotes: prev.personalNotes || inc.personalNotes,
       });
     } else {
-      merged.push(inc);
+      merged.push({
+        ...inc,
+        features: stripZoneX(inc.features ?? []),
+      });
     }
   }
 
   for (const old of existing) {
     if (!matchedIds.has(old.id)) {
-      merged.push(old);
+      merged.push({
+        ...old,
+        features: stripZoneX(old.features ?? []),
+      });
     }
   }
 

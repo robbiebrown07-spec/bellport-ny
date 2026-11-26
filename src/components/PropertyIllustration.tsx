@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { Maximize2 } from 'lucide-react';
 import type { ArchetypeIllustration } from '../types';
+import { PhotoLightbox } from './PhotoLightbox';
 
 interface PropertyIllustrationProps {
   archetype: ArchetypeIllustration;
   address: string;
   styleName: string;
   photoUrl?: string;
+  photos?: string[];
 }
 
 export const PropertyIllustration: React.FC<PropertyIllustrationProps> = ({
@@ -13,17 +16,59 @@ export const PropertyIllustration: React.FC<PropertyIllustrationProps> = ({
   address,
   styleName,
   photoUrl,
+  photos,
 }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (photoUrl && !imgFailed) {
+    const gallery =
+      photos && photos.length > 0 ? Array.from(new Set(photos.filter(Boolean))) : [photoUrl];
     return (
-      <img
-        src={photoUrl}
-        alt={`${address} — ${styleName} in Bellport Village, NY`}
-        loading="lazy"
-        onError={() => setImgFailed(true)}
-      />
+      <>
+        <img
+          src={photoUrl}
+          alt={`${address} — ${styleName} in Bellport Village, NY`}
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+        />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setLightboxOpen(true);
+          }}
+          title="Expand photo full screen"
+          aria-label={`Expand ${address} photo full screen`}
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            zIndex: 4,
+            width: 30,
+            height: 30,
+            borderRadius: 999,
+            border: '1px solid rgba(255, 255, 255, 0.36)',
+            background: 'rgba(15, 37, 55, 0.72)',
+            color: '#ffffff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          <Maximize2 size={13} />
+        </button>
+        {lightboxOpen && (
+          <PhotoLightbox
+            photos={gallery}
+            initialIndex={0}
+            address={address}
+            onClose={() => setLightboxOpen(false)}
+          />
+        )}
+      </>
     );
   }
 

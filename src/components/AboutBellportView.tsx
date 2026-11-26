@@ -846,7 +846,7 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
                 {
                   name: '3. Country Club & West (North of Main · West)',
                   streets: 'N. Howells Pt Rd, Woodland Park Rd, General McLean Dr, Bieselin Rd',
-                  desc: 'Leafy, peaceful residential lanes north of South Country Road with generous 0.35–0.6 acre lots and high-and-dry Flood Zone X elevation.',
+                  desc: 'Leafy, peaceful residential lanes north of South Country Road with generous 0.35–0.6 acre lots on dry inland ground.',
                   photo: resolveAssetUrl('/photos/p-2713653.webp'),
                   sampleLabel: '7 N Howells Pt Rd · c. 1934',
                   pid: 'p-2713653',
@@ -949,17 +949,17 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
             >
               <div>
                 <strong style={{ color: 'var(--ink)', display: 'block', marginBottom: 4 }}>
-                  1. Understand the Elevation Split (Zone X vs. AE/VE)
+                  1. Understand the Elevation Split (Shorefront Flood Zones AE/VE vs. Dry Upland)
                 </strong>
                 Fire Island shields Bellport from direct Atlantic surf, though bay storm surge
-                affects immediate low-lying shorefront blocks. Crucially, Bellport rises quickly
-                onto a glacial outwash plain:{' '}
+                affects immediate low-lying shorefront blocks (FEMA Zones AE and VE). Crucially,
+                Bellport rises quickly onto a glacial outwash plain:{' '}
                 <strong style={{ color: 'var(--ink)' }}>
                   over 80% of the Village — including upper Bellport Ln, Browns Ln, Bell St, Hulse,
                   upper Livingston, and virtually all blocks north of Main St — sits at 20–32 ft
-                  elevation in FEMA Flood Zone X
+                  elevation outside any coastal flood zone
                 </strong>{' '}
-                (outside the 100-year floodplain, with no mandatory flood insurance).
+                (requiring no mandatory flood insurance).
               </div>
               <div>
                 <strong style={{ color: 'var(--ink)', display: 'block', marginBottom: 4 }}>
@@ -975,9 +975,9 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
                   }}
                 >
                   <li>
-                    <strong>Buy Walkable Elevation:</strong> Choosing a Zone X lot 2–4 blocks off
-                    the water gives a 6-minute walk to the Marina while avoiding surge &amp; FEMA
-                    50%-rule renovation caps.
+                    <strong>Buy Walkable Elevation:</strong> Choosing a lot 2–4 blocks off
+                    the water gives a 6-minute walk to the Marina while staying outside coastal
+                    flood zones &amp; FEMA 50%-rule renovation caps.
                   </li>
                   <li>
                     <strong>Harden Systems:</strong> Pair a natural-gas standby generator with

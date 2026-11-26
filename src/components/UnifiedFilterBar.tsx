@@ -708,7 +708,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
                     <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
-                      Low ($)
+                      Min ($)
                     </label>
                     <input
                       type="text"
@@ -718,6 +718,13 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                       value={minPriceDraft}
                       onChange={(e) => {
                         const raw = e.target.value;
+                        if (/^\s*[<≤]/.test(raw)) {
+                          const cleaned = raw.replace(/^\s*[<≤=]+\s*/, '');
+                          setMinPriceDraft('');
+                          setMaxPriceDraft(cleaned);
+                          patch({ minPrice: null, maxPrice: parseFlexibleNumber(cleaned) });
+                          return;
+                        }
                         setMinPriceDraft(raw);
                         patch({ minPrice: parseFlexibleNumber(raw) });
                       }}
@@ -725,16 +732,23 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
-                      High ($)
+                      Max ($)
                     </label>
                     <input
                       type="text"
                       inputMode="text"
                       style={inputStyle}
-                      placeholder="e.g. 2.5m"
+                      placeholder="e.g. 3m"
                       value={maxPriceDraft}
                       onChange={(e) => {
                         const raw = e.target.value;
+                        if (/^\s*[>≥]/.test(raw)) {
+                          const cleaned = raw.replace(/^\s*[>≥=]+\s*/, '');
+                          setMaxPriceDraft('');
+                          setMinPriceDraft(cleaned);
+                          patch({ maxPrice: null, minPrice: parseFlexibleNumber(cleaned) });
+                          return;
+                        }
                         setMaxPriceDraft(raw);
                         patch({ maxPrice: parseFlexibleNumber(raw) });
                       }}
@@ -744,9 +758,10 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
                   {[
                     ['<$1M', null, 1_000_000],
-                    ['$1M–$2M', 1_000_000, 2_000_000],
-                    ['$2M–$3.5M', 2_000_000, 3_500_000],
-                    ['$3.5M+', 3_500_000, null],
+                    ['<$2M', null, 2_000_000],
+                    ['<$3M', null, 3_000_000],
+                    ['$1M–$2.5M', 1_000_000, 2_500_000],
+                    ['$3M+', 3_000_000, null],
                   ].map(([lbl, lo, hi]) => (
                     <button
                       key={lbl as string}

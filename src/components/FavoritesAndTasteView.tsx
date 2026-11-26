@@ -82,9 +82,6 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
       if (f.feats.includes('addl_struct') || /barn|carriage|studio|pool house/.test(blob)) {
         traitMap.set('detached studio or pool house', (traitMap.get('detached studio or pool house') ?? 0) + 1);
       }
-      if (f.lat >= 40.748) {
-        traitMap.set('high-and-dry Flood Zone X', (traitMap.get('high-and-dry Flood Zone X') ?? 0) + 1);
-      }
     }
 
     // Fold in explicit dropdown refinements so Robbie's manual tweaks immediately update the Taste Profile!
@@ -408,6 +405,7 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                           address={h.address}
                           styleName={h.style}
                           photoUrl={h.photoUrl}
+                          photos={h.photos}
                         />
                         <div className="listing-card__badges">
                           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -548,6 +546,7 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                           address={h.address}
                           styleName={h.style}
                           photoUrl={h.photoUrl}
+                          photos={h.photos}
                         />
 
                         <div className="listing-card__badges">

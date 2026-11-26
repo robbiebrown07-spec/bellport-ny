@@ -152,7 +152,11 @@ export const DESIGN_FEATURE_LABELS: Record<string, string> = {
 };
 
 export function parseFlexibleNumber(raw: string): number | null {
-  const s = raw.trim().toLowerCase().replace(/[$,\s]/g, '');
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^[<>≤≥=~+-]+/, '')
+    .replace(/[$,\s]/g, '');
   if (!s) return null;
   if (s.endsWith('m')) {
     const n = parseFloat(s.slice(0, -1));
@@ -537,30 +541,13 @@ export function homeMatchesUnifiedFilters(
       }
     }
   } else if (isDirectoryMode) {
-    const anyNarrowing =
-      Boolean(filters.valuation) ||
-      filters.minPrice !== null ||
-      filters.maxPrice !== null ||
-      filters.minBeds !== null ||
-      filters.maxBeds !== null ||
-      filters.minBaths !== null ||
-      filters.maxBaths !== null ||
-      filters.minSqft !== null ||
-      filters.maxSqft !== null ||
-      filters.minLot !== null ||
-      filters.maxLot !== null ||
-      filters.belowSC ||
-      filters.beautifulStreetsOnly ||
-      filters.beautifulStreets.length > 0 ||
-      filters.areas.length > 0 ||
-      filters.feats.length > 0 ||
-      filters.q.trim() !== '' ||
-      Boolean(nl?.active);
-    if (!anyNarrowing && !h.isForSale) return false;
+    // On the Homes directory tab, default to active For Sale listings unless the user
+    // explicitly selected Past Sales, Sold Recently, Built Recently, or All Village Homes.
+    if (!h.isForSale) return false;
   }
 
-  // Price (use estVal when comparing off-market/old past sales unless past_sales explicitly requested)
-  const cmpPrice = h.isForSale ? h.price : filters.allPastSales || nl?.statusIntent === 'past_sales' ? h.price : h.estVal;
+  // Always compare against the exact displayed price (`h.price`) so no card ever exceeds maxPrice or falls below minPrice
+  const cmpPrice = h.price;
   if (filters.minPrice !== null && cmpPrice < filters.minPrice) return false;
   if (filters.maxPrice !== null && cmpPrice > filters.maxPrice) return false;
   if (filters.minBeds !== null && h.beds < filters.minBeds) return false;

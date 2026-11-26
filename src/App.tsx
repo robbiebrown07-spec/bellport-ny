@@ -798,6 +798,7 @@ export const App: React.FC = () => {
                                 address={h.address}
                                 styleName={h.style}
                                 photoUrl={h.photoUrl}
+                                photos={h.photos}
                               />
                               <div className="listing-card__badges">
                                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>

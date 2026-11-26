@@ -140,7 +140,7 @@ function extractFeatureTags(
     if (keepTagMap[key]) set.add(keepTagMap[key]);
   }
 
-  if (floodZone === 'X') set.add('Zone X');
+  if (floodZone !== 'X') set.add(`Flood Zone ${floodZone}`);
   if (!inVillage) set.add('outside village boundary');
 
   return Array.from(set).slice(0, 12);

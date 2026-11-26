@@ -242,16 +242,18 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                   ? 'Incorporated Village ✓ (Ho-Hum Ferry + Marina)'
                   : 'Outside Village Boundary (No Ho-Hum Ferry)'}
               </span>
-              <span
-                className="badge"
-                style={
-                  listing.floodZone !== 'X'
-                    ? { background: '#fef7e0', color: '#b06000', borderColor: 'rgba(251,188,4,0.5)' }
-                    : undefined
-                }
-              >
-                Flood Zone {listing.floodZone}
-              </span>
+              {listing.floodZone !== 'X' && (
+                <span
+                  className="badge"
+                  style={{
+                    background: '#fef7e0',
+                    color: '#b06000',
+                    borderColor: 'rgba(251,188,4,0.5)',
+                  }}
+                >
+                  Flood Zone {listing.floodZone}
+                </span>
+              )}
               <span className="badge" style={{ textTransform: 'capitalize' }}>
                 {listing.marketStatus}
               </span>
@@ -556,7 +558,9 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
           <div>
             <h3 style={{ fontSize: 16, marginBottom: 8 }}>Features & Searchable Keywords</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {listing.features.map((tag) => (
+              {listing.features
+                .filter((tag) => !/^(?:flood\s+)?zone\s*x$/i.test(tag.trim()))
+                .map((tag) => (
                 <span
                   key={tag}
                   className="tag-pill"

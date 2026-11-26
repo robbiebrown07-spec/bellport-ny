@@ -126,8 +126,8 @@ export function parseListingSnippet(raw: string): Partial<Listing> {
   for (const [rx, label] of KEYWORD_EXTRACTORS) {
     if (rx.test(raw)) features.push(label);
   }
-  if (floodZone === 'X' && !features.includes('Zone X')) {
-    features.push('Zone X');
+  if (floodZone !== 'X') {
+    features.push(`Flood Zone ${floodZone}`);
   }
 
   return {
@@ -276,7 +276,7 @@ export function parseCsvListings(csvText: string): Listing[] {
       archetype: inferArchetype(address),
       headline: `${beds}-bedroom residence on ${address} (${lotAcres} acres).`,
       description: `Imported via CSV on ${today}. ${beds} beds, ${baths} baths, ${sqft.toLocaleString()} sq ft on ${lotAcres} acres in ${area}.`,
-      features: inVillage ? ['Zone X', 'CSV import'] : ['outside village boundary', 'CSV import'],
+      features: inVillage ? ['CSV import'] : ['outside village boundary', 'CSV import'],
       brokerage: idxBroker >= 0 && row[idxBroker] ? row[idxBroker] : 'Imported Listing',
       mlsId: idxMls >= 0 && row[idxMls] ? row[idxMls] : undefined,
       sourceUrl: idxUrl >= 0 && row[idxUrl] ? row[idxUrl] : undefined,
