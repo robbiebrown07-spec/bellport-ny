@@ -7,8 +7,10 @@ import type {
   VillageParcel,
 } from '../types';
 import { evaluateGoodDeal } from './intelligence';
-import { parseNaturalLanguageQuery } from './nlSearch';
+import type { GeminiSearchPlan } from './geminiSearchPlanner';
+import { normalizeBellportStreetText, parseNaturalLanguageQuery } from './nlSearch';
 import {
+  classifyArchitecturalTaste,
   evaluateArchitecturalBeauty,
   getOwnerAndAirbnbProfile,
 } from './ownerAndAirbnb';
@@ -505,10 +507,13 @@ export function homeMatchesUnifiedFilters(
   h: UnifiedHome,
   filters: UnifiedFilters,
   isDirectoryMode: boolean,
-  savedTasteFilters?: UnifiedFilters
+  savedTasteFilters?: UnifiedFilters,
+  geminiPlan?: GeminiSearchPlan | null
 ): boolean {
   if (h.isHidden) return false;
-  const nl = filters.nlQuery.trim() ? parseNaturalLanguageQuery(filters.nlQuery) : null;
+  const trimmedNl = filters.nlQuery.trim();
+  const nl = trimmedNl ? parseNaturalLanguageQuery(trimmedNl) : null;
+  const gp = geminiPlan && geminiPlan.query === trimmedNl ? geminiPlan : null;
 
   const anyStatus =
     filters.forSale ||
@@ -517,8 +522,15 @@ export function homeMatchesUnifiedFilters(
     filters.allPastSales ||
     filters.allHomes;
 
-  if (nl?.isQuestion && nl.statusIntent === 'past_sales') {
+  const effStatusIntent = nl?.statusIntent ?? gp?.statusIntent ?? null;
+  const effExactSoldYrs =
+    nl && nl.soldExactYears.length > 0 ? nl.soldExactYears : gp?.soldExactYears ?? [];
+
+  if (nl?.isQuestion && effStatusIntent === 'past_sales') {
     if (!h.hasPastSale) return false;
+    if (effExactSoldYrs.length > 0 && (!h.soldYear || !effExactSoldYrs.includes(h.soldYear))) {
+      return false;
+    }
     if (nl.soldYears && (!h.soldYear || h.soldYear < CURRENT_VILLAGE_YEAR - nl.soldYears)) {
       return false;
     }
@@ -538,11 +550,14 @@ export function homeMatchesUnifiedFilters(
       ok = true;
     }
     if (!ok) return false;
-  } else if (nl?.statusIntent) {
-    if (nl.statusIntent === 'for_sale' && !h.isForSale) return false;
-    if (nl.statusIntent === 'past_sales') {
+  } else if (effStatusIntent) {
+    if (effStatusIntent === 'for_sale' && !h.isForSale) return false;
+    if (effStatusIntent === 'past_sales') {
       if (!h.hasPastSale) return false;
-      if (nl.soldYears && (!h.soldYear || h.soldYear < CURRENT_VILLAGE_YEAR - nl.soldYears)) {
+      if (effExactSoldYrs.length > 0 && (!h.soldYear || !effExactSoldYrs.includes(h.soldYear))) {
+        return false;
+      }
+      if (nl?.soldYears && (!h.soldYear || h.soldYear < CURRENT_VILLAGE_YEAR - nl.soldYears)) {
         return false;
       }
     }
@@ -662,7 +677,7 @@ export function homeMatchesUnifiedFilters(
     if (deal.status !== filters.valuation) return false;
   }
 
-  const wantedFit = filters.robbieFit || nl?.robbieFit || '';
+  const wantedFit = filters.robbieFit || nl?.robbieFit || gp?.robbieFit || '';
   if (wantedFit) {
     const fit = evaluateRobbieFit(toPseudoListing(h));
     if (wantedFit === 'perfect' && fit.tier !== 'perfect') return false;
@@ -688,21 +703,67 @@ export function homeMatchesUnifiedFilters(
     if (!tokens.every((t: string) => hay.includes(t))) return false;
   }
 
-  // Natural Language Search evaluation (structured + visual/photo + GIS spatial + synonym-expanded)
+  // Natural Language + Live Gemini Semantic Search evaluation
   if (nl?.active && !nl.isAdvisoryOnly) {
-    if (nl.minPrice !== null && cmpPrice < nl.minPrice) return false;
-    if (nl.maxPrice !== null && cmpPrice > nl.maxPrice) return false;
-    if (nl.minBeds !== null && h.beds < nl.minBeds) return false;
-    if (nl.maxBeds !== null && h.beds > nl.maxBeds) return false;
-    if (nl.minBaths !== null && h.baths < nl.minBaths) return false;
-    if (nl.minSqft !== null && h.sqft < nl.minSqft) return false;
-    if (nl.minLot !== null && h.lotAcres < nl.minLot) return false;
-    if (nl.maxWalkMin !== null && h.walkMin > nl.maxWalkMin) return false;
-    if (nl.maxWalkStoresMin !== null && h.walkStoresMin > nl.maxWalkStoresMin) return false;
-    if (nl.belowSC && !h.belowSC) return false;
+    const effMinPrice = nl.minPrice ?? gp?.minPrice ?? null;
+    const effMaxPrice = nl.maxPrice ?? gp?.maxPrice ?? null;
+    const effMinBeds = nl.minBeds ?? gp?.minBeds ?? null;
+    const effMaxBeds = nl.maxBeds ?? gp?.maxBeds ?? null;
+    const effMinBaths = nl.minBaths ?? gp?.minBaths ?? null;
+    const effMinSqft = nl.minSqft ?? gp?.minSqft ?? null;
+    const effMinLot = nl.minLot ?? gp?.minLot ?? null;
+    const effMaxWalk = nl.maxWalkMin ?? gp?.maxWalkMin ?? null;
+    const effMaxWalkStores = nl.maxWalkStoresMin ?? gp?.maxWalkStoresMin ?? null;
+    const effBelowSC = nl.belowSC || Boolean(gp?.belowSC);
+    const effNorthSC = nl.northOfSC || Boolean(gp?.northOfSC);
+    const effExclFlood = nl.excludeFloodZone || Boolean(gp?.excludeFloodZone);
+    const effExclPool = nl.excludePool || Boolean(gp?.excludePool);
+    const effExclOverpriced = nl.excludeOverpriced || Boolean(gp?.excludeOverpriced);
+    const effExclUgly = nl.excludeUglyArch || Boolean(gp?.excludeUglyArch);
+    const effPoolMode = nl.poolMode ?? gp?.poolMode ?? null;
+    const effVal = nl.valuation ?? gp?.valuation ?? null;
+
+    if (effMinPrice !== null && cmpPrice < effMinPrice) return false;
+    if (effMaxPrice !== null && cmpPrice > effMaxPrice) return false;
+    if (effMinBeds !== null && h.beds < effMinBeds) return false;
+    if (effMaxBeds !== null && h.beds > effMaxBeds) return false;
+    if (effMinBaths !== null && h.baths < effMinBaths) return false;
+    if (effMinSqft !== null && h.sqft < effMinSqft) return false;
+    if (effMinLot !== null && h.lotAcres < effMinLot) return false;
+    if (nl.maxLot !== null && h.lotAcres > nl.maxLot) return false;
+    if (effMaxWalk !== null && h.walkMin > effMaxWalk) return false;
+    if (effMaxWalkStores !== null && h.walkStoresMin > effMaxWalkStores) return false;
+    if (effBelowSC && !h.belowSC) return false;
+    if (effNorthSC && h.belowSC) return false;
     if (nl.beautifulStreetsOnly && !h.beautifulStreet) return false;
     if (nl.maxYearBuilt !== null && h.yearBuilt > nl.maxYearBuilt) return false;
     if (nl.minYearBuilt !== null && h.yearBuilt < nl.minYearBuilt) return false;
+
+    if (effExclFlood || nl.inFloodZoneOnly) {
+      const pseudo = toPseudoListing(h);
+      if (effExclFlood && pseudo.floodZone !== 'X') return false;
+      if (nl.inFloodZoneOnly && pseudo.floodZone === 'X') return false;
+    }
+
+    if (effExclPool && h.feats.includes('pool')) return false;
+
+    if (effExclOverpriced) {
+      const deal = evaluateGoodDeal(toPseudoListing(h), []);
+      if (deal.status === 'overpriced') return false;
+    }
+
+    if (effExclUgly || nl.similarToAddress) {
+      const taste = classifyArchitecturalTaste(toPseudoListing(h));
+      if (taste.bucket === 'ugly') return false;
+    }
+
+    if (nl.similarToAddress) {
+      // Exclude the exact reference home itself and match classic character + reasonable scale
+      const normSelf = normalizeBellportStreetText(h.address);
+      if (normSelf === nl.similarToAddress) return false;
+      const taste = classifyArchitecturalTaste(toPseudoListing(h));
+      if (taste.bucket !== 'loved') return false;
+    }
 
     if (nl.extColors.length > 0) {
       if (!nl.extColors.includes(h.extColor)) return false;
@@ -713,6 +774,16 @@ export function homeMatchesUnifiedFilters(
         if (!h.traits.includes('large_lawn') && h.openLawnAc < 0.34 && !h.feats.includes('lawn')) {
           return false;
         }
+      } else if (tr === 'second_home' || tr === 'full_time_owner') {
+        const prof = getOwnerAndAirbnbProfile({
+          parcelId: h.parcelId,
+          owner: h.owner,
+          mail: h.mail,
+          absentee: h.parcelRef.absentee,
+          listing: toPseudoListing(h),
+        });
+        if (tr === 'second_home' && prof.residencyStatus !== 'second_home') return false;
+        if (tr === 'full_time_owner' && prof.residencyStatus !== 'full_time_local') return false;
       } else if (!h.traits.includes(tr)) {
         return false;
       }
@@ -734,25 +805,26 @@ export function homeMatchesUnifiedFilters(
       if (b.score10 < nl.minBeauty) return false;
     }
 
-    if (nl.streetMentions.length > 0) {
-      const addrLow = h.address
-        .toLowerCase()
-        .replace(/\broad\b/g, 'rd')
-        .replace(/\blane\b/g, 'ln')
-        .replace(/\bstreet\b/g, 'st')
-        .replace(/\bavenue\b/g, 'ave');
-      if (!nl.streetMentions.some((sm) => addrLow.includes(sm))) return false;
+    const streetsWanted =
+      nl.streetMentions.length > 0 ? nl.streetMentions : gp?.streetMentions ?? [];
+    if (streetsWanted.length > 0) {
+      const addrNorm = normalizeBellportStreetText(h.address);
+      if (!streetsWanted.some((sm) => addrNorm.includes(sm))) return false;
     }
 
-    if (nl.poolMode === 'pool_or_room') {
-      if (!h.feats.includes('pool') && !h.feats.includes('space_pool')) return false;
-    } else if (nl.poolMode === 'pool_only') {
-      if (!h.feats.includes('pool')) return false;
-    } else if (nl.poolMode === 'room_only') {
-      if (!h.feats.includes('space_pool')) return false;
+    if (!effExclPool) {
+      if (effPoolMode === 'pool_or_room') {
+        if (!h.feats.includes('pool') && !h.feats.includes('space_pool')) return false;
+      } else if (effPoolMode === 'pool_only') {
+        if (!h.feats.includes('pool')) return false;
+      } else if (effPoolMode === 'room_only') {
+        if (!h.feats.includes('space_pool')) return false;
+      }
     }
 
-    for (const fk of nl.feats) {
+    const featsWanted = Array.from(new Set([...nl.feats, ...(gp?.feats ?? [])]));
+    for (const fk of featsWanted) {
+      if (fk === 'pool' || fk === 'space_pool') continue;
       if (!h.feats.includes(fk)) return false;
     }
 
@@ -761,31 +833,28 @@ export function homeMatchesUnifiedFilters(
       if (!nl.styleTokens.some((st) => styleHay.includes(st))) return false;
     }
 
-    if (nl.valuation) {
+    if (effVal) {
       const deal = evaluateGoodDeal(toPseudoListing(h), []);
-      if (deal.status !== nl.valuation) return false;
+      if (deal.status !== effVal) return false;
     }
 
-    if (nl.residualTokens.length > 0) {
-      const hay = [
-        h.address,
-        h.area,
-        h.beautifulStreetName ?? '',
-        h.style,
-        h.styleSummary,
-        h.description,
-        h.extColor,
-        h.traits.join(' '),
-        h.feats.map((f) => DESIGN_FEATURE_LABELS[f] ?? f).join(' '),
-        h.owner ?? '',
-        h.mail ?? '',
-      ]
-        .join(' ')
-        .toLowerCase()
-        .replace(/\broad\b/g, 'rd')
-        .replace(/\blane\b/g, 'ln')
-        .replace(/\bstreet\b/g, 'st')
-        .replace(/\bavenue\b/g, 'ave');
+    // Only enforce residual keyword tokens if Gemini hasn't already semantically interpreted this query
+    if (nl.residualTokens.length > 0 && !gp) {
+      const hay = normalizeBellportStreetText(
+        [
+          h.address,
+          h.area,
+          h.beautifulStreetName ?? '',
+          h.style,
+          h.styleSummary,
+          h.description,
+          h.extColor,
+          h.traits.join(' '),
+          h.feats.map((f) => DESIGN_FEATURE_LABELS[f] ?? f).join(' '),
+          h.owner ?? '',
+          h.mail ?? '',
+        ].join(' ')
+      );
 
       const synMap: Record<string, string[]> = {
         modern: ['modern', 'contemporary', '202', 'barn'],

@@ -338,27 +338,43 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             border: 'none',
             outline: 'none',
             background: 'transparent',
-            fontSize: 13.5,
+            fontSize: isMobile ? 16 : 13.5,
             color: 'var(--ink)',
           }}
         />
         {parsedNl.active &&
           !parsedNl.isAdvisoryOnly &&
-          parsedNl.chips.map((c) => (
-            <span
-              key={c}
-              style={{
-                fontSize: 11,
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: 'var(--accent-soft)',
-                color: 'var(--accent)',
-                fontWeight: 500,
-              }}
-            >
-              {c}
-            </span>
-          ))}
+          (qaCtx?.geminiPlan && qaCtx.geminiPlan.query === filters.nlQuery.trim() && qaCtx.geminiPlan.aiChips.length > 0
+            ? qaCtx.geminiPlan.aiChips.map((c) => (
+                <span
+                  key={`ai-${c}`}
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: '#e8f0fe',
+                    color: '#174ea6',
+                    fontWeight: 600,
+                  }}
+                >
+                  ✦ {c}
+                </span>
+              ))
+            : parsedNl.chips.map((c) => (
+                <span
+                  key={c}
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {c}
+                </span>
+              )))}
         {filters.nlQuery.trim() && !qaAnswer && (
           <button
             type="button"
@@ -406,6 +422,28 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           </button>
         )}
       </div>
+
+      {!qaAnswer &&
+        qaCtx?.geminiPlan &&
+        qaCtx.geminiPlan.query === filters.nlQuery.trim() &&
+        qaCtx.geminiPlan.aiNote && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              fontSize: 12.5,
+              color: '#174ea6',
+              background: '#f3f7fe',
+              border: '1px solid rgba(26,115,232,0.22)',
+              borderRadius: 12,
+              padding: '7px 12px',
+            }}
+          >
+            <Sparkles size={13} style={{ flexShrink: 0 }} />
+            <span>{qaCtx.geminiPlan.aiNote}</span>
+          </div>
+        )}
 
       {qaCtx && qaAnswer && (
         <VillageQaCard

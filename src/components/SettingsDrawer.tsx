@@ -160,7 +160,9 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 type="password"
                 value={geminiDraft}
                 onChange={(e) => setGeminiDraft(e.target.value)}
-                placeholder={geminiKey ? 'Paste new key to replace…' : 'Paste Gemini key (AIzaSy…)'}
+                placeholder={
+                  geminiKey ? 'Paste new key to replace…' : 'Paste Gemini key (AQ.… or AIza…)'
+                }
                 autoComplete="off"
                 style={{
                   flex: '1 1 180px',

@@ -21,6 +21,11 @@ import { evaluateGoodDeal } from './lib/intelligence';
 import { evaluateRobbieFit } from './lib/robbieFit';
 import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
 import { parseNaturalLanguageQuery } from './lib/nlSearch';
+import {
+  planGeminiPropertySearch,
+  shouldRunGeminiSearchPlanner,
+  type GeminiSearchPlan,
+} from './lib/geminiSearchPlanner';
 import { useGeminiApiKey } from './lib/geminiKey';
 import { VillageQaContext } from './lib/villageQa';
 import {
@@ -285,9 +290,59 @@ export const App: React.FC = () => {
     [unifiedFilters.nlQuery]
   );
 
+  const [geminiApiKey, setGeminiApiKey] = useGeminiApiKey();
+  const [geminiPlanState, setGeminiPlanState] = useState<{
+    query: string;
+    plan: GeminiSearchPlan;
+  } | null>(null);
+
+  const trimmedActiveNl = unifiedFilters.nlQuery.trim();
+  const activeGeminiPlan =
+    geminiApiKey && geminiPlanState?.query === trimmedActiveNl ? geminiPlanState.plan : null;
+
+  const activeListingsDigest = useMemo(
+    () =>
+      catalog
+        .filter((h) => h.isForSale && !h.isHidden)
+        .map(
+          (h) =>
+            `${h.parcelId}: ${h.address} ($${(h.price / 1e6).toFixed(2)}M, ${h.beds}bd/${h.baths}ba, ${h.lotAcres}ac, yr ${h.yearBuilt}, ${h.style}, belowSC=${h.belowSC}, feats=${h.feats.join(',')})`
+        )
+        .join('\n'),
+    [catalog]
+  );
+
+  useEffect(() => {
+    if (!geminiApiKey || !shouldRunGeminiSearchPlanner(trimmedActiveNl)) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void planGeminiPropertySearch({
+        query: trimmedActiveNl,
+        geminiApiKey,
+        activeListingsDigest,
+      }).then((plan) => {
+        if (active && plan) {
+          setGeminiPlanState({ query: trimmedActiveNl, plan });
+        }
+      });
+    }, 450);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [activeListingsDigest, geminiApiKey, trimmedActiveNl]);
+
   const matchedHomes = useMemo(() => {
-    const list = catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, true, tasteFilters));
+    const list = catalog.filter((h) =>
+      homeMatchesUnifiedFilters(h, unifiedFilters, true, tasteFilters, activeGeminiPlan)
+    );
+    const recSet = new Set(activeGeminiPlan?.recommendedParcelIds ?? []);
     list.sort((a, b) => {
+      if (recSet.size > 0) {
+        const ra = recSet.has(a.parcelId) ? 1 : 0;
+        const rb = recSet.has(b.parcelId) ? 1 : 0;
+        if (ra !== rb) return rb - ra;
+      }
       if (sortBy === 'featured') {
         if (a.isForSale !== b.isForSale) return a.isForSale ? -1 : 1;
         if (parsedNl.sortHint === 'lawn_desc') return b.openLawnAc - a.openLawnAc;
@@ -332,9 +387,7 @@ export const App: React.FC = () => {
       return 0;
     });
     return list;
-  }, [allListings, catalog, parsedNl.sortHint, sortBy, tasteFilters, unifiedFilters]);
-
-  const [geminiApiKey, setGeminiApiKey] = useGeminiApiKey();
+  }, [activeGeminiPlan, allListings, catalog, parsedNl.sortHint, sortBy, tasteFilters, unifiedFilters]);
 
   const qaContextValue = useMemo(
     () => ({
@@ -345,11 +398,13 @@ export const App: React.FC = () => {
       activeFilters: unifiedFilters,
       idealSearchNotes,
       geminiApiKey,
+      geminiPlan: activeGeminiPlan,
       onSaveGeminiKey: setGeminiApiKey,
       onOpenHome: (pid: string) => setSelectedParcelOrListingId(pid),
       onOpenSavedTab: () => setActiveView('favorites'),
     }),
     [
+      activeGeminiPlan,
       allListings,
       catalog,
       geminiApiKey,

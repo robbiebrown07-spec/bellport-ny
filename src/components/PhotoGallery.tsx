@@ -21,7 +21,12 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
 }) => {
   const allUrls = React.useMemo(() => {
     const list = photos && photos.length > 0 ? photos : photoUrl ? [photoUrl] : [];
-    return Array.from(new Set(list.filter(Boolean)));
+    const upgraded = list.filter(Boolean).map((u) =>
+      /photos\.zillowstatic\.com\/fp\/.*-p_[c-f]\.jpg$/i.test(u)
+        ? u.replace(/-p_[c-f]\.jpg$/i, '-cc_ft_960.webp')
+        : u
+    );
+    return Array.from(new Set(upgraded));
   }, [photos, photoUrl]);
 
   const [index, setIndex] = useState(0);

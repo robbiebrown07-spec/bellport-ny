@@ -61,6 +61,7 @@ export interface VillageQaContextValue {
   activeFilters: UnifiedFilters;
   idealSearchNotes: string;
   geminiApiKey?: string;
+  geminiPlan?: import('./geminiSearchPlanner').GeminiSearchPlan | null;
   onSaveGeminiKey?: (key: string) => void;
   onOpenHome: (parcelId: string) => void;
   onOpenSavedTab?: () => void;

@@ -443,7 +443,7 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
               type="password"
               value={keyDraft}
               onChange={(e) => setKeyDraft(e.target.value)}
-              placeholder="AIzaSy…"
+              placeholder="Paste full Gemini key (AQ.… or AIza…)"
               autoComplete="off"
               style={{
                 flex: '1 1 210px',

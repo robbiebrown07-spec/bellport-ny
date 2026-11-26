@@ -122,6 +122,30 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
   const [hoveredCardParcelId, setHoveredCardParcelId] = useState<string | null>(null);
   const [dossiersByAddr, setDossiersByAddr] = useState<Record<string, OffMarketDossier>>({});
   const [dossierLoading, setDossierLoading] = useState(false);
+  const [isMobileMap, setIsMobileMap] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 768 : false
+  );
+  const [canHover, setCanHover] = useState<boolean>(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
+      : true
+  );
+
+  useEffect(() => {
+    const mqMob = window.matchMedia('(max-width: 768px)');
+    const mqHov = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const sync = () => {
+      setIsMobileMap(mqMob.matches);
+      setCanHover(mqHov.matches);
+    };
+    sync();
+    mqMob.addEventListener('change', sync);
+    mqHov.addEventListener('change', sync);
+    return () => {
+      mqMob.removeEventListener('change', sync);
+      mqHov.removeEventListener('change', sync);
+    };
+  }, []);
 
   // zoom = 1.08 frames mainland Bellport Village cleanly; zoom = 0.54 reveals Private Beach (Ho-Hum) + Ferry!
   const [view, setView] = useState({
@@ -272,10 +296,18 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
   const matchedHomes = useMemo<UnifiedHome[]>(() => {
     const list = filtering
-      ? catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, false, qaCtx?.tasteFilters))
+      ? catalog.filter((h) =>
+          homeMatchesUnifiedFilters(h, unifiedFilters, false, qaCtx?.tasteFilters, qaCtx?.geminiPlan)
+        )
       : catalog.filter((h) => h.isForSale && !h.isHidden);
 
+    const recSet = new Set(qaCtx?.geminiPlan?.recommendedParcelIds ?? []);
     list.sort((a, b) => {
+      if (recSet.size > 0) {
+        const ra = recSet.has(a.parcelId) ? 1 : 0;
+        const rb = recSet.has(b.parcelId) ? 1 : 0;
+        if (ra !== rb) return rb - ra;
+      }
       if (a.isForSale !== b.isForSale) return a.isForSale ? -1 : 1;
       if (parsedNl.sortHint === 'lawn_desc') return b.openLawnAc - a.openLawnAc;
       if (parsedNl.sortHint === 'beauty_desc') {
@@ -297,7 +329,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       return b.price - a.price;
     });
     return list;
-  }, [catalog, filtering, parsedNl.sortHint, qaCtx?.tasteFilters, unifiedFilters]);
+  }, [catalog, filtering, parsedNl.sortHint, qaCtx?.geminiPlan, qaCtx?.tasteFilters, unifiedFilters]);
 
   const applyFilters = useCallback(
     (next: UnifiedFilters) => {
@@ -336,8 +368,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     unifiedFilters.beautifulStreetsOnly,
   ]);
 
-  const highlightedCardParcelId =
-    hoveredCardParcelId ?? (filtering ? (matchedHomes[0]?.parcelId ?? null) : null);
+  const highlightedCardParcelId = canHover ? hoveredCardParcelId : null;
 
   const highlightedCardParcel = useMemo(
     () =>
@@ -426,6 +457,14 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         setStreetSummary(null);
         hits.sort((a, b) => a.acres - b.acres);
         const hit = hits[0];
+        // Tapping the already-selected parcel toggles/unselects it cleanly!
+        if (selectedParcelId === hit.id) {
+          setSelectedPoi(null);
+          setSelectedParcelId(null);
+          setHoveredParcel(null);
+          setHoveredCardParcelId(null);
+          return;
+        }
         const linkedPoi =
           bundle.pois.find((poi) => poi.parcelId === hit.id) ??
           (!hit.res
@@ -446,12 +485,22 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       // 4. If user clicked directly on a Village street carriageway between parcels, show that block's 1-sentence summary!
       const nearSt = findNearestStreetAtPoint(lon, lat, bundle.streets, 0.00026);
       if (nearSt) {
+        setSelectedParcelId(null);
+        setSelectedPoi(null);
         setStreetSummary(
           describeStreetBlock(nearSt.street.name, nearSt.lon, nearSt.lat, bundle.parcels)
         );
+        return;
       }
+
+      // 5. Tapping empty bay / open background clears any active selection
+      setSelectedParcelId(null);
+      setSelectedPoi(null);
+      setStreetSummary(null);
+      setHoveredParcel(null);
+      setHoveredCardParcelId(null);
     },
-    [bundle, hitTestStreetLabel, unprojectWith]
+    [bundle, hitTestStreetLabel, selectedParcelId, unprojectWith]
   );
 
   // Native non-passive touch handler for smooth 2-finger pinch-to-zoom + pan/twist + 1-finger tap
@@ -1418,6 +1467,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       return;
     }
 
+    if (!canHover) return;
+
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
@@ -1643,710 +1694,765 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         </div>
 
         {/* Full-Width Interactive Bellport Village Parcel & Satellite Map */}
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            borderRadius: 'var(--radius)',
-            overflow: 'hidden',
-            border: '1px solid var(--line)',
-            background: mapMode === 'satellite' ? '#142a3b' : '#fcfcfd',
-            height: 610,
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            onContextMenu={(e) => e.preventDefault()}
-            onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={() => {
-              dragRef.current.mode = 'none';
-              setHoveredParcel(null);
-              setHoveredStreetName(null);
-            }}
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'block',
-              touchAction: 'none',
-              userSelect: 'none',
-              cursor: hoveredStreetName || hoveredParcel ? 'pointer' : 'grab',
-            }}
-          />
+        {(() => {
+          const clearSelection = () => {
+            setSelectedParcelId(null);
+            setSelectedPoi(null);
+            setHoveredParcel(null);
+            setHoveredCardParcelId(null);
+            setStreetSummary(null);
+          };
 
-          {/* Top-Left Address Jump */}
-          <div style={{ position: 'absolute', top: 12, left: 12, right: 64, maxWidth: 245 }}>
-            <input
-              type="search"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchText.trim()) {
-                  if (searchMatches.length === 1) {
-                    focusParcelById(searchMatches[0].id);
-                    setSearchText('');
-                  } else {
-                    applyFilters({ ...unifiedFilters, nlQuery: searchText.trim() });
-                    setSearchText('');
-                  }
-                }
-              }}
-              placeholder="Jump to address…"
-              style={{
-                width: '100%',
-                height: 34,
-                padding: '0 12px',
-                borderRadius: 999,
-                border: '1px solid var(--line)',
-                background: 'rgba(255,255,255,0.96)',
-                color: '#18232c',
-                fontSize: 12,
-                boxShadow: 'var(--shadow-1)',
-              }}
-            />
-            {searchText.trim().length > 1 && (
-              <div
-                style={{
-                  marginTop: 6,
-                  borderRadius: 14,
-                  background: '#ffffff',
-                  border: '1px solid var(--line)',
-                  boxShadow: 'var(--shadow-2)',
-                  overflow: 'hidden',
-                }}
-              >
-                {searchMatches.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => {
-                      focusParcelById(m.id);
-                      setSearchText('');
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      textAlign: 'left',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: '1px solid var(--line)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: 12,
-                    }}
-                  >
-                    <strong>{m.addr}</strong>
-                    <span style={{ color: 'var(--ink-2)' }}>{m.acres} ac</span>
-                  </button>
-                ))}
+          const selectedCardInner = selectedPoi ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span className="eyebrow" style={{ marginBottom: 0 }}>
+                  {selectedPoi.kind === 'park' || selectedPoi.kind === 'beach'
+                    ? 'Public Waterfront & Beach'
+                    : selectedPoi.kind === 'golf'
+                      ? 'Golf & Tennis'
+                      : selectedPoi.kind === 'dining'
+                        ? 'Main Street Dining'
+                        : selectedPoi.kind === 'shop'
+                          ? 'Village Shop & Market'
+                          : 'Civic & Cultural Landmark'}
+                </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    applyFilters({ ...unifiedFilters, nlQuery: searchText.trim() });
-                    setSearchText('');
+                  onClick={clearSelection}
+                  aria-label="Unselect landmark"
+                  className="icon-btn"
+                  style={{ height: 28, padding: '0 9px', fontSize: 11.5 }}
+                >
+                  <X size={13} />
+                  <span>Unselect</span>
+                </button>
+              </div>
+
+              {selectedPoi.photoUrl && (
+                <div
+                  style={{
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    border: '1px solid var(--line)',
+                    aspectRatio: '16 / 10',
+                    background: 'var(--surface-subtle)',
+                  }}
+                >
+                  <img
+                    src={resolveAssetUrl(selectedPoi.photoUrl)}
+                    alt={selectedPoi.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <h2 style={{ fontSize: 19, marginBottom: 3 }}>{selectedPoi.name}</h2>
+                <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: 0 }}>{selectedPoi.addr}</p>
+              </div>
+
+              <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--ink)', margin: 0 }}>
+                {selectedPoi.desc}
+              </p>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {selectedPoi.websiteUrl && (
+                  <a
+                    href={selectedPoi.websiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="icon-btn icon-btn--primary"
+                    style={{ textDecoration: 'none', flex: 1, justifyContent: 'center' }}
+                  >
+                    <Globe size={14} />
+                    <span>{selectedPoi.websiteLabel ?? 'Official Site'}</span>
+                    <ExternalLink size={12} />
+                  </a>
+                )}
+                <a
+                  href={
+                    selectedPoi.mapsUrl ??
+                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedPoi.name} Bellport NY`)}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="icon-btn"
+                  style={{ textDecoration: 'none', flex: 1, justifyContent: 'center' }}
+                >
+                  <MapPin size={14} />
+                  <span>Google Maps</span>
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            </>
+          ) : selectedHome ? (
+            (() => {
+              const pseudo = toPseudoListing(selectedHome);
+              const val = evaluateGoodDeal(pseudo, listings);
+              const fit = evaluateRobbieFit(pseudo);
+              const beauty = evaluateArchitecturalBeauty(pseudo);
+              const ownerInfo = getOwnerAndAirbnbProfile({
+                parcelId: selectedHome.parcelId,
+                owner: selectedHome.owner,
+                mail: selectedHome.mail,
+                absentee: selectedHome.parcelRef.absentee,
+                listing: pseudo,
+              });
+
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <RobbieFitBadge listing={pseudo} fit={fit} compact />
+                      <span className={`badge ${selectedHome.isForSale ? 'badge--village' : ''}`}>
+                        {selectedHome.isForSale
+                          ? 'For Sale'
+                          : selectedHome.hasPastSale
+                            ? `Sold ${selectedHome.soldYear}`
+                            : 'Off-Market'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onToggleFavorite(selectedHome.parcelId, selectedHome.listingId)
+                        }
+                        className={`icon-btn ${selectedHome.isFavorite ? 'is-active' : ''}`}
+                        style={{ height: 28, padding: '0 9px', fontSize: 11.5 }}
+                      >
+                        <Heart
+                          size={13}
+                          fill={selectedHome.isFavorite ? 'var(--g-red)' : 'none'}
+                          color={selectedHome.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                        />
+                        <span>{selectedHome.isFavorite ? 'Saved' : 'Save'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onToggleHidden(selectedHome.parcelId, selectedHome.listingId)
+                        }
+                        className="icon-btn"
+                        title={
+                          selectedHome.isHidden
+                            ? 'Restore this house to results'
+                            : 'Remove this house from results'
+                        }
+                        aria-label={
+                          selectedHome.isHidden
+                            ? `Restore ${selectedHome.address}`
+                            : `Hide ${selectedHome.address} from results`
+                        }
+                        style={{
+                          height: 28,
+                          padding: '0 8px',
+                          fontSize: 11.5,
+                          ...(selectedHome.isHidden
+                            ? {
+                                background: '#fce8e6',
+                                color: '#c5221f',
+                                borderColor: 'rgba(197,34,31,0.3)',
+                              }
+                            : {}),
+                        }}
+                      >
+                        <ThumbsDown
+                          size={13}
+                          fill={selectedHome.isHidden ? '#c5221f' : 'none'}
+                          color={selectedHome.isHidden ? '#c5221f' : 'currentColor'}
+                        />
+                        {selectedHome.isHidden && <span>Hidden</span>}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        aria-label="Unselect property"
+                        className="icon-btn"
+                        style={{ height: 28, padding: '0 9px', fontSize: 11.5 }}
+                      >
+                        <X size={13} />
+                        <span>Unselect</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h2 style={{ fontSize: 19, marginBottom: 2 }}>{selectedHome.address}</h2>
+                    <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: 0 }}>{selectedHome.style}</p>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <ValuationBadge listing={pseudo} deal={val} compact />
+                      <span
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          padding: '2px 9px',
+                          borderRadius: 999,
+                          background: 'var(--surface-subtle)',
+                          border: '1px solid var(--line)',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        Beauty {beauty.display}
+                      </span>
+                    </div>
+                  </div>
+
+                  <PhotoGallery
+                    photos={selectedHome.photos}
+                    photoUrl={selectedHome.photoUrl}
+                    archetype={selectedHome.archetype}
+                    address={selectedHome.address}
+                    styleName={selectedHome.style}
+                  />
+
+                  <SkimmablePropertyNotes
+                    text={selectedHome.description || selectedHome.styleSummary}
+                    listing={pseudo}
+                    compact
+                  />
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 12,
+                      background: 'var(--surface-subtle)',
+                      border: '1px solid var(--line)',
+                      fontSize: 11.5,
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: 'var(--ink-2)', display: 'block' }}>
+                        {selectedHome.isForSale
+                          ? 'Asking Price'
+                          : selectedHome.hasPastSale
+                            ? `Sold (${selectedHome.soldYear})`
+                            : 'Est. Market Value'}
+                      </span>
+                      <strong className="priv-val" style={{ fontSize: 14.5, fontFamily: 'var(--font-mono)' }}>
+                        ${selectedHome.price.toLocaleString()}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--ink-2)', display: 'block' }}>Size &amp; Lot</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>
+                        {selectedHome.beds}bd/{selectedHome.baths}ba · {selectedHome.sqft.toLocaleString()} ft² · {selectedHome.lotAcres} ac
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      background: ownerInfo.isListedOnAirbnb ? '#e6f4ea' : 'var(--surface-subtle)',
+                      border: '1px solid var(--line)',
+                      fontSize: 11.5,
+                    }}
+                  >
+                    <strong>
+                      {ownerInfo.residencyStatus === 'second_home'
+                        ? 'Second-Home Owner'
+                        : 'Full-Time Local Address'}
+                    </strong>
+                    {' · '}
+                    <span style={{ color: 'var(--ink-2)' }}>{ownerInfo.ownerDisplay}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn--primary"
+                      style={{ justifyContent: 'center', flex: 1 }}
+                      onClick={() => onOpenHomeDrawer(selectedHome.parcelId)}
+                    >
+                      <span>Full Property Details →</span>
+                    </button>
+                    {!selectedHome.listingRef && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Load Past Deed & Tax History"
+                        disabled={dossierLoading}
+                        onClick={() => void handleFetchDossier(selectedHome.address)}
+                      >
+                        <History size={14} />
+                        <span>{dossierLoading ? '…' : activeDossier ? 'Loaded' : 'Deed'}</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              );
+            })()
+          ) : null;
+
+          const activeBottomParcel =
+            selectedParcel ?? (canHover ? (hoveredParcel ?? highlightedCardParcel) : null);
+          const isExplicitSelection = Boolean(selectedParcel && activeBottomParcel?.id === selectedParcel.id);
+
+          return (
+            <>
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  borderRadius: 'var(--radius)',
+                  overflow: 'hidden',
+                  border: '1px solid var(--line)',
+                  background: mapMode === 'satellite' ? '#142a3b' : '#fcfcfd',
+                  height: isMobileMap ? 440 : 610,
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onWheel={handleWheel}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={() => {
+                    dragRef.current.mode = 'none';
+                    setHoveredParcel(null);
+                    setHoveredStreetName(null);
                   }}
                   style={{
                     width: '100%',
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    background: 'var(--accent-soft)',
-                    color: 'var(--accent)',
-                    border: 'none',
+                    height: '100%',
+                    display: 'block',
+                    touchAction: 'none',
+                    userSelect: 'none',
+                    cursor: hoveredStreetName || hoveredParcel ? 'pointer' : 'grab',
+                  }}
+                />
+
+                {/* Top-Left Address Jump (compact on mobile so map stays clean) */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    left: 10,
+                    right: 58,
+                    maxWidth: isMobileMap ? 176 : 245,
+                  }}
+                >
+                  <input
+                    type="search"
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && searchText.trim()) {
+                        if (searchMatches.length === 1) {
+                          focusParcelById(searchMatches[0].id);
+                          setSearchText('');
+                        } else {
+                          applyFilters({ ...unifiedFilters, nlQuery: searchText.trim() });
+                          setSearchText('');
+                        }
+                      }
+                    }}
+                    placeholder={isMobileMap ? 'Find address…' : 'Jump to address…'}
+                    style={{
+                      width: '100%',
+                      height: isMobileMap ? 32 : 34,
+                      padding: '0 11px',
+                      borderRadius: 999,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(255,255,255,0.94)',
+                      color: '#18232c',
+                      fontSize: isMobileMap ? 16 : 12,
+                      boxShadow: 'var(--shadow-1)',
+                    }}
+                  />
+                  {searchText.trim().length > 1 && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        borderRadius: 14,
+                        background: '#ffffff',
+                        border: '1px solid var(--line)',
+                        boxShadow: 'var(--shadow-2)',
+                        overflow: 'hidden',
+                        zIndex: 6,
+                        position: 'relative',
+                      }}
+                    >
+                      {searchMatches.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            focusParcelById(m.id);
+                            setSearchText('');
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            textAlign: 'left',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: '1px solid var(--line)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            fontSize: 12,
+                          }}
+                        >
+                          <strong>{m.addr}</strong>
+                          <span style={{ color: 'var(--ink-2)' }}>{m.acres} ac</span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          applyFilters({ ...unifiedFilters, nlQuery: searchText.trim() });
+                          setSearchText('');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'var(--accent-soft)',
+                          color: 'var(--accent)',
+                          border: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <Sparkles size={12} />
+                        <span>Search “{searchText.trim()}” with Gemini</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Desktop-Only Floating Selected Property / POI Card (On mobile it renders cleanly below the map!) */}
+                {!isMobileMap && selectedCardInner && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 58,
+                      width: 'min(368px, calc(100% - 76px))',
+                      maxHeight: 'calc(100% - 68px)',
+                      overflowY: 'auto',
+                      borderRadius: 16,
+                      background: '#ffffff',
+                      border: '1px solid var(--line)',
+                      boxShadow: 'var(--shadow-2)',
+                      padding: 16,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 11,
+                      zIndex: 4,
+                    }}
+                  >
+                    {selectedCardInner}
+                  </div>
+                )}
+
+                {/* Top-Right Zoom, Rotate & Reset Controls */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    background: 'rgba(255,255,255,0.95)',
+                    padding: 4,
+                    borderRadius: 14,
+                    border: '1px solid var(--line)',
+                    boxShadow: 'var(--shadow-1)',
+                    alignItems: 'center',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Zoom in"
+                    style={{ borderColor: 'transparent', width: 28, height: 28 }}
+                    onClick={() => setView((v) => ({ ...v, zoom: Math.min(14, v.zoom * 1.38) }))}
+                  >
+                    <Plus size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Zoom out"
+                    style={{ borderColor: 'transparent', width: 28, height: 28 }}
+                    onClick={() => setView((v) => ({ ...v, zoom: Math.max(0.42, v.zoom / 1.38) }))}
+                  >
+                    <Minus size={15} />
+                  </button>
+                  {!isMobileMap && (
+                    <>
+                      <div style={{ width: '100%', height: 1, background: 'var(--line)' }} />
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Rotate left"
+                          style={{ borderColor: 'transparent', width: 26, height: 26 }}
+                          onClick={() =>
+                            setView((v) => ({ ...v, bearing: (v.bearing - 45 + 360) % 360 }))
+                          }
+                        >
+                          <RotateCcw size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Rotate right"
+                          style={{ borderColor: 'transparent', width: 26, height: 26 }}
+                          onClick={() => setView((v) => ({ ...v, bearing: (v.bearing + 45) % 360 }))}
+                        >
+                          <RotateCw size={13} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Reset Bellport Village View"
+                    style={{ borderColor: 'transparent', width: 28, height: 28 }}
+                    onClick={resetVillageOnlyView}
+                  >
+                    <Compass size={14} />
+                  </button>
+                </div>
+
+                {/* Bottom-Right Beach Ferry + Map | Satellite Segmented Toggle */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    bottom: 10,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    fontSize: 11.5,
-                    fontWeight: 600,
                   }}
                 >
-                  <Sparkles size={12} />
-                  <span>Search “{searchText.trim()}” with Gemini</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Floating Selected Property or POI Card over the Full-Width Map */}
-          {(selectedPoi || selectedHome) && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 12,
-                right: 58,
-                width: 'min(368px, calc(100% - 76px))',
-                maxHeight: 'calc(100% - 68px)',
-                overflowY: 'auto',
-                borderRadius: 16,
-                background: '#ffffff',
-                border: '1px solid var(--line)',
-                boxShadow: 'var(--shadow-2)',
-                padding: 16,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 11,
-                zIndex: 4,
-              }}
-            >
-              {selectedPoi ? (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="eyebrow" style={{ marginBottom: 0 }}>
-                      {selectedPoi.kind === 'park' || selectedPoi.kind === 'beach'
-                        ? 'Public Waterfront & Beach'
-                        : selectedPoi.kind === 'golf'
-                          ? 'Golf & Tennis'
-                          : selectedPoi.kind === 'dining'
-                            ? 'Main Street Dining'
-                            : selectedPoi.kind === 'shop'
-                              ? 'Village Shop & Market'
-                              : 'Civic & Cultural Landmark'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedPoi(null);
-                        setSelectedParcelId(null);
-                      }}
-                      aria-label="Close landmark card"
-                      style={{ background: 'none', border: 'none', color: 'var(--ink-2)', cursor: 'pointer' }}
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-
-                  {selectedPoi.photoUrl && (
-                    <div
-                      style={{
-                        borderRadius: 12,
-                        overflow: 'hidden',
-                        border: '1px solid var(--line)',
-                        aspectRatio: '16 / 10',
-                        background: 'var(--surface-subtle)',
-                      }}
-                    >
-                      <img
-                        src={resolveAssetUrl(selectedPoi.photoUrl)}
-                        alt={selectedPoi.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <h2 style={{ fontSize: 19, marginBottom: 3 }}>{selectedPoi.name}</h2>
-                    <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: 0 }}>{selectedPoi.addr}</p>
-                  </div>
-
-                  <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--ink)', margin: 0 }}>
-                    {selectedPoi.desc}
-                  </p>
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {selectedPoi.websiteUrl && (
-                      <a
-                        href={selectedPoi.websiteUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="icon-btn icon-btn--primary"
-                        style={{ textDecoration: 'none', flex: 1, justifyContent: 'center' }}
-                      >
-                        <Globe size={14} />
-                        <span>{selectedPoi.websiteLabel ?? 'Official Site'}</span>
-                        <ExternalLink size={12} />
-                      </a>
-                    )}
-                    <a
-                      href={
-                        selectedPoi.mapsUrl ??
-                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedPoi.name} Bellport NY`)}`
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="icon-btn"
-                      style={{ textDecoration: 'none', flex: 1, justifyContent: 'center' }}
-                    >
-                      <MapPin size={14} />
-                      <span>Google Maps</span>
-                      <ExternalLink size={12} />
-                    </a>
-                  </div>
-                </>
-              ) : selectedHome ? (
-                (() => {
-                  const pseudo = toPseudoListing(selectedHome);
-                  const val = evaluateGoodDeal(pseudo, listings);
-                  const fit = evaluateRobbieFit(pseudo);
-                  const beauty = evaluateArchitecturalBeauty(pseudo);
-                  const ownerInfo = getOwnerAndAirbnbProfile({
-                    parcelId: selectedHome.parcelId,
-                    owner: selectedHome.owner,
-                    mail: selectedHome.mail,
-                    absentee: selectedHome.parcelRef.absentee,
-                    listing: pseudo,
-                  });
-
-                  return (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <RobbieFitBadge listing={pseudo} fit={fit} compact />
-                          <span className={`badge ${selectedHome.isForSale ? 'badge--village' : ''}`}>
-                            {selectedHome.isForSale
-                              ? 'For Sale'
-                              : selectedHome.hasPastSale
-                                ? `Sold ${selectedHome.soldYear}`
-                                : 'Off-Market'}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onToggleFavorite(selectedHome.parcelId, selectedHome.listingId)
-                            }
-                            className={`icon-btn ${selectedHome.isFavorite ? 'is-active' : ''}`}
-                            style={{ height: 28, padding: '0 9px', fontSize: 11.5 }}
-                          >
-                            <Heart
-                              size={13}
-                              fill={selectedHome.isFavorite ? 'var(--g-red)' : 'none'}
-                              color={selectedHome.isFavorite ? 'var(--g-red)' : 'currentColor'}
-                            />
-                            <span>{selectedHome.isFavorite ? 'Saved' : 'Save'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onToggleHidden(selectedHome.parcelId, selectedHome.listingId)
-                            }
-                            className="icon-btn"
-                            title={
-                              selectedHome.isHidden
-                                ? 'Restore this house to results'
-                                : 'Remove this house from results'
-                            }
-                            aria-label={
-                              selectedHome.isHidden
-                                ? `Restore ${selectedHome.address}`
-                                : `Hide ${selectedHome.address} from results`
-                            }
-                            style={{
-                              height: 28,
-                              padding: '0 8px',
-                              fontSize: 11.5,
-                              ...(selectedHome.isHidden
-                                ? {
-                                    background: '#fce8e6',
-                                    color: '#c5221f',
-                                    borderColor: 'rgba(197,34,31,0.3)',
-                                  }
-                                : {}),
-                            }}
-                          >
-                            <ThumbsDown
-                              size={13}
-                              fill={selectedHome.isHidden ? '#c5221f' : 'none'}
-                              color={selectedHome.isHidden ? '#c5221f' : 'currentColor'}
-                            />
-                            {selectedHome.isHidden && <span>Hidden</span>}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedParcelId(null)}
-                            aria-label="Close property card"
-                            style={{ background: 'none', border: 'none', color: 'var(--ink-2)', cursor: 'pointer' }}
-                          >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h2 style={{ fontSize: 19, marginBottom: 2 }}>{selectedHome.address}</h2>
-                        <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: 0 }}>{selectedHome.style}</p>
-                        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <ValuationBadge listing={pseudo} deal={val} compact />
-                          <span
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: 600,
-                              padding: '2px 9px',
-                              borderRadius: 999,
-                              background: 'var(--surface-subtle)',
-                              border: '1px solid var(--line)',
-                              fontFamily: 'var(--font-mono)',
-                            }}
-                          >
-                            Beauty {beauty.display}
-                          </span>
-                        </div>
-                      </div>
-
-                      <PhotoGallery
-                        photos={selectedHome.photos}
-                        photoUrl={selectedHome.photoUrl}
-                        archetype={selectedHome.archetype}
-                        address={selectedHome.address}
-                        styleName={selectedHome.style}
-                      />
-
-                      <SkimmablePropertyNotes
-                        text={selectedHome.description || selectedHome.styleSummary}
-                        listing={pseudo}
-                        compact
-                      />
-
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: 8,
-                          padding: 10,
-                          borderRadius: 12,
-                          background: 'var(--surface-subtle)',
-                          border: '1px solid var(--line)',
-                          fontSize: 11.5,
-                        }}
-                      >
-                        <div>
-                          <span style={{ color: 'var(--ink-2)', display: 'block' }}>
-                            {selectedHome.isForSale
-                              ? 'Asking Price'
-                              : selectedHome.hasPastSale
-                                ? `Sold (${selectedHome.soldYear})`
-                                : 'Est. Market Value'}
-                          </span>
-                          <strong className="priv-val" style={{ fontSize: 14.5, fontFamily: 'var(--font-mono)' }}>
-                            ${selectedHome.price.toLocaleString()}
-                          </strong>
-                        </div>
-                        <div>
-                          <span style={{ color: 'var(--ink-2)', display: 'block' }}>Size & Lot</span>
-                          <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                            {selectedHome.beds}bd/{selectedHome.baths}ba · {selectedHome.sqft.toLocaleString()} ft² · {selectedHome.lotAcres} ac
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          padding: '8px 10px',
-                          borderRadius: 10,
-                          background: ownerInfo.isListedOnAirbnb ? '#e6f4ea' : 'var(--surface-subtle)',
-                          border: '1px solid var(--line)',
-                          fontSize: 11.5,
-                        }}
-                      >
-                        <strong>
-                          {ownerInfo.residencyStatus === 'second_home'
-                            ? 'Second-Home Owner'
-                            : 'Full-Time Local Address'}
-                        </strong>
-                        {' · '}
-                        <span style={{ color: 'var(--ink-2)' }}>{ownerInfo.ownerDisplay}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          type="button"
-                          className="icon-btn icon-btn--primary"
-                          style={{ justifyContent: 'center', flex: 1 }}
-                          onClick={() => onOpenHomeDrawer(selectedHome.parcelId)}
-                        >
-                          <span>Full Property Details →</span>
-                        </button>
-                        {!selectedHome.listingRef && (
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            title="Load Past Deed & Tax History"
-                            disabled={dossierLoading}
-                            onClick={() => void handleFetchDossier(selectedHome.address)}
-                          >
-                            <History size={14} />
-                            <span>{dossierLoading ? '…' : activeDossier ? 'Loaded' : 'Deed'}</span>
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()
-              ) : null}
-            </div>
-          )}
-
-          {/* Top-Right Zoom, Rotate, Village Reset & Private Beach Toggle Controls */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
-              background: '#ffffff',
-              padding: 5,
-              borderRadius: 16,
-              border: '1px solid var(--line)',
-              boxShadow: 'var(--shadow-1)',
-              alignItems: 'center',
-            }}
-          >
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Zoom in"
-              style={{ borderColor: 'transparent', width: 30, height: 30 }}
-              onClick={() => setView((v) => ({ ...v, zoom: Math.min(14, v.zoom * 1.38) }))}
-            >
-              <Plus size={15} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Zoom out"
-              style={{ borderColor: 'transparent', width: 30, height: 30 }}
-              onClick={() => setView((v) => ({ ...v, zoom: Math.max(0.42, v.zoom / 1.38) }))}
-            >
-              <Minus size={15} />
-            </button>
-            <div style={{ width: '100%', height: 1, background: 'var(--line)' }} />
-            <div style={{ display: 'flex', gap: 2 }}>
-              <button
-                type="button"
-                className="icon-btn"
-                title="Rotate left"
-                style={{ borderColor: 'transparent', width: 26, height: 26 }}
-                onClick={() =>
-                  setView((v) => ({ ...v, bearing: (v.bearing - 45 + 360) % 360 }))
-                }
-              >
-                <RotateCcw size={13} />
-              </button>
-              <button
-                type="button"
-                className="icon-btn"
-                title="Rotate right"
-                style={{ borderColor: 'transparent', width: 26, height: 26 }}
-                onClick={() => setView((v) => ({ ...v, bearing: (v.bearing + 45) % 360 }))}
-              >
-                <RotateCw size={13} />
-              </button>
-            </div>
-            <button
-              type="button"
-              className="icon-btn"
-              title="Reset Bellport Village View"
-              style={{ borderColor: 'transparent', width: 30, height: 28 }}
-              onClick={resetVillageOnlyView}
-            >
-              <Compass size={14} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-pressed={isBeachFerryView}
-              title={
-                isBeachFerryView
-                  ? 'Return to Bellport Village view'
-                  : 'Zoom out to Private Beach and Ferry'
-              }
-              style={{
-                borderColor: 'transparent',
-                width: 30,
-                height: 28,
-                background: isBeachFerryView ? '#0f2537' : 'transparent',
-                color: isBeachFerryView ? '#ffffff' : 'var(--accent)',
-              }}
-              onClick={togglePrivateBeachAndFerry}
-            >
-              <Anchor size={14} />
-            </button>
-          </div>
-
-          {/* Bottom-Right Toggleable Private Beach and Ferry Pill + Map | Satellite Segmented Toggle */}
-          <div
-            style={{
-              position: 'absolute',
-              right: 12,
-              bottom: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-            }}
-          >
-            <button
-              type="button"
-              aria-pressed={isBeachFerryView}
-              onClick={togglePrivateBeachAndFerry}
-              title={
-                isBeachFerryView
-                  ? 'Click again to return to Bellport Village only'
-                  : 'Show Private Beach (Ho-Hum) and Ferry route'
-              }
-              style={{
-                height: 32,
-                padding: '0 13px',
-                borderRadius: 999,
-                border: isBeachFerryView ? '1px solid #0f2537' : '1px solid var(--line)',
-                background: isBeachFerryView ? '#0f2537' : '#ffffff',
-                boxShadow: 'var(--shadow-1)',
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: isBeachFerryView ? '#ffffff' : 'var(--ink)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                transition: 'background 160ms ease, color 160ms ease, border-color 160ms ease',
-              }}
-            >
-              <Anchor size={12} color={isBeachFerryView ? '#e2c07d' : 'var(--accent)'} />
-              <span>Private Beach and Ferry</span>
-              {isBeachFerryView && (
-                <X size={12} style={{ marginLeft: 2, opacity: 0.85 }} />
-              )}
-            </button>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                padding: 3,
-                borderRadius: 999,
-                background: '#ffffff',
-                border: '1px solid var(--line)',
-                boxShadow: 'var(--shadow-1)',
-              }}
-            >
-              {(['map', 'satellite'] as const).map((mMode) => {
-                const active = mapMode === mMode;
-                return (
                   <button
-                    key={mMode}
                     type="button"
-                    onClick={() => setMapMode(mMode)}
+                    aria-pressed={isBeachFerryView}
+                    onClick={togglePrivateBeachAndFerry}
+                    title={
+                      isBeachFerryView
+                        ? 'Return to Bellport Village only'
+                        : 'Show Private Beach (Ho-Hum) and Ferry route'
+                    }
                     style={{
-                      padding: '4px 11px',
+                      height: 30,
+                      padding: isMobileMap ? '0 9px' : '0 12px',
                       borderRadius: 999,
-                      border: 'none',
-                      background: active ? '#0f2537' : 'transparent',
-                      color: active ? '#ffffff' : 'var(--ink)',
-                      fontSize: 11.5,
+                      border: isBeachFerryView ? '1px solid #0f2537' : '1px solid var(--line)',
+                      background: isBeachFerryView ? '#0f2537' : 'rgba(255,255,255,0.95)',
+                      boxShadow: 'var(--shadow-1)',
+                      fontSize: 11,
                       fontWeight: 600,
-                      textTransform: 'capitalize',
+                      color: isBeachFerryView ? '#ffffff' : 'var(--ink)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
                     }}
                   >
-                    {mMode === 'map' ? 'Map' : 'Satellite'}
+                    <Anchor size={12} color={isBeachFerryView ? '#e2c07d' : 'var(--accent)'} />
+                    <span>{isMobileMap ? 'Ho-Hum' : 'Private Beach & Ferry'}</span>
+                    {isBeachFerryView && <X size={11} style={{ opacity: 0.85 }} />}
                   </button>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Clickable Street Name -> Concise One-Sentence Block Summary Card */}
-          {streetSummary && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 12,
-                right: 12,
-                bottom: 52,
-                maxWidth: 460,
-                padding: '12px 14px',
-                borderRadius: 14,
-                background: 'rgba(255,255,255,0.97)',
-                border: '1px solid var(--line)',
-                boxShadow: 'var(--shadow-2)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="eyebrow" style={{ marginBottom: 0 }}>
-                  Block Summary · {streetSummary.blockLabel}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setStreetSummary(null)}
-                  aria-label="Close street summary"
-                  style={{ background: 'none', border: 'none', color: 'var(--ink-2)' }}
-                >
-                  <X size={14} />
-                </button>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      padding: 2,
+                      borderRadius: 999,
+                      background: 'rgba(255,255,255,0.95)',
+                      border: '1px solid var(--line)',
+                      boxShadow: 'var(--shadow-1)',
+                    }}
+                  >
+                    {(['map', 'satellite'] as const).map((mMode) => {
+                      const active = mapMode === mMode;
+                      return (
+                        <button
+                          key={mMode}
+                          type="button"
+                          onClick={() => setMapMode(mMode)}
+                          style={{
+                            padding: isMobileMap ? '3px 8px' : '4px 11px',
+                            borderRadius: 999,
+                            border: 'none',
+                            background: active ? '#0f2537' : 'transparent',
+                            color: active ? '#ffffff' : 'var(--ink)',
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {mMode === 'map' ? 'Map' : isMobileMap ? 'Sat' : 'Satellite'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Clickable Street Name -> Concise One-Sentence Block Summary Card */}
+                {streetSummary && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 10,
+                      right: 10,
+                      bottom: 46,
+                      maxWidth: 460,
+                      padding: '11px 13px',
+                      borderRadius: 14,
+                      background: 'rgba(255,255,255,0.97)',
+                      border: '1px solid var(--line)',
+                      boxShadow: 'var(--shadow-2)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      zIndex: 5,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="eyebrow" style={{ marginBottom: 0 }}>
+                        Block Summary · {streetSummary.blockLabel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setStreetSummary(null)}
+                        aria-label="Close street summary"
+                        style={{ background: 'none', border: 'none', color: 'var(--ink-2)' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--ink)', margin: 0 }}>
+                      {streetSummary.sentence}
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
+                        {streetSummary.homeCount} Village homes on this street
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          applyFilters({
+                            ...unifiedFilters,
+                            allHomes: true,
+                            nlQuery: streetSummary.streetName,
+                            q: '',
+                          });
+                          setStreetSummary(null);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent)',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          padding: 0,
+                        }}
+                      >
+                        Filter homes on {streetSummary.streetName} →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom-Left Parcel Pill (Dismissible with × when a parcel is selected!) */}
+                {activeBottomParcel && !streetSummary && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 10,
+                      bottom: 10,
+                      height: 30,
+                      padding: isExplicitSelection ? '0 6px 0 11px' : '0 11px',
+                      borderRadius: 999,
+                      background: 'rgba(255,255,255,0.96)',
+                      border:
+                        isExplicitSelection || (!hoveredParcel && highlightedCardParcel)
+                          ? '1.5px solid #ea4335'
+                          : '1px solid var(--line)',
+                      boxShadow: 'var(--shadow-1)',
+                      fontSize: 11.5,
+                      pointerEvents: isExplicitSelection ? 'auto' : 'none',
+                      maxWidth: isMobileMap ? 'calc(100% - 178px)' : '56%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      <strong>{activeBottomParcel.poiName ?? activeBottomParcel.addr}</strong>
+                      {!isMobileMap && ` · ${activeBottomParcel.acres} ac`}
+                      {activeBottomParcel.val && activeBottomParcel.res ? (
+                        <span className="priv-val"> · {fmtShortDollar(activeBottomParcel.val)}</span>
+                      ) : null}
+                    </span>
+                    {isExplicitSelection && (
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        aria-label="Unselect highlighted property"
+                        title="Unselect property"
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: '50%',
+                          border: 'none',
+                          background: 'rgba(234, 67, 53, 0.14)',
+                          color: '#c5221f',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          padding: 0,
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--ink)', margin: 0 }}>
-                {streetSummary.sentence}
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
-                  {streetSummary.homeCount} Village homes on this street
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    applyFilters({
-                      ...unifiedFilters,
-                      allHomes: true,
-                      nlQuery: streetSummary.streetName,
-                      q: '',
-                    });
-                    setStreetSummary(null);
-                  }}
+
+              {/* Mobile Selected Property / POI Card Rendered Cleanly BELOW the Map (Zero Map Obstruction!) */}
+              {isMobileMap && selectedCardInner && (
+                <div
                   style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--accent)',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: 0,
+                    borderRadius: 16,
+                    background: '#ffffff',
+                    border: '1.5px solid rgba(234, 67, 53, 0.55)',
+                    boxShadow: 'var(--shadow-2)',
+                    padding: 15,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 11,
                   }}
                 >
-                  Filter homes on {streetSummary.streetName} →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Hover or Active Red-Highlighted Card Callout */}
-          {(hoveredParcel || highlightedCardParcel) && !streetSummary && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 12,
-                bottom: 12,
-                padding: '6px 12px',
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.96)',
-                border:
-                  !hoveredParcel && highlightedCardParcel
-                    ? '1.5px solid #ea4335'
-                    : '1px solid var(--line)',
-                boxShadow: 'var(--shadow-1)',
-                fontSize: 12,
-                pointerEvents: 'none',
-                maxWidth: '56%',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {(() => {
-                const p = hoveredParcel ?? highlightedCardParcel!;
-                return (
-                  <>
-                    <strong>{p.poiName ?? p.addr}</strong> · {p.acres} ac
-                    {p.val && p.res ? (
-                      <span className="priv-val"> · {fmtShortDollar(p.val)}</span>
-                    ) : null}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
+                  {selectedCardInner}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* NYT Feature-Article Dynamic Scroll-Reveal Section Below the Map */}
         {matchedHomes.length > 0 && (
@@ -2415,7 +2521,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   >
                     <article
                       className="listing-card"
-                      onMouseEnter={() => setHoveredCardParcelId(h.parcelId)}
+                      onMouseEnter={() => {
+                        if (canHover) setHoveredCardParcelId(h.parcelId);
+                      }}
                       onMouseLeave={() =>
                         setHoveredCardParcelId((cur) => (cur === h.parcelId ? null : cur))
                       }
