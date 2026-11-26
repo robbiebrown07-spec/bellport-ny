@@ -12,7 +12,11 @@ import {
   saveServerState,
   updateSyncMetadata,
 } from './store.ts';
-import { clipListingFromUrl, syncBellportFromRealtyApi } from './realtyapi.ts';
+import {
+  clipListingFromUrl,
+  fetchOffMarketParcelDossier,
+  syncBellportFromRealtyApi,
+} from './realtyapi.ts';
 
 const APP_VERSION = '0.2.0';
 let geminiCooldownUntil = 0;
@@ -194,6 +198,18 @@ export async function handleApiRequest(
           message: 'Gemini temporarily unavailable — showing deterministic architectural analysis.',
         });
       }
+      return true;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/parcel-dossier') {
+      const body = await readJsonBody<{ address?: string }>(req);
+      if (!body.address || !body.address.trim()) {
+        sendJson(res, 400, { error: 'Missing parcel street address.' });
+        return true;
+      }
+      const apiKey = readRealtyApiKey();
+      const dossier = await fetchOffMarketParcelDossier(body.address.trim(), apiKey);
+      sendJson(res, 200, { dossier, syncMeta: getSyncMetadata() });
       return true;
     }
 

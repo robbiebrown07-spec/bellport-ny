@@ -7,6 +7,7 @@ interface TopBarProps {
   activeView: PrimaryView;
   counts: {
     listings: number;
+    parcels: number;
     favorites: number;
     alertHits: number;
     priceDrops: number;
@@ -66,6 +67,18 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               Listings
               <span className="segmented-tabs__count">{counts.listings}</span>
+            </button>
+
+            <button
+              id="view-map"
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'map'}
+              className={`segmented-tabs__tab ${activeView === 'map' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('map')}
+            >
+              Village Map
+              <span className="segmented-tabs__count">{counts.parcels.toLocaleString()}</span>
             </button>
 
             <button

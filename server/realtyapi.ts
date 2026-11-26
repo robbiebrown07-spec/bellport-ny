@@ -1,6 +1,14 @@
-import type { ArchetypeIllustration, FloodZone, Listing, MarketStatus } from '../src/types.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import type {
+  ArchetypeIllustration,
+  FloodZone,
+  Listing,
+  MarketStatus,
+  OffMarketDossier,
+} from '../src/types.ts';
 import { BELLPORT_SEARCH_POLYGON, classifyBellportLocation } from './bellport-geo.ts';
-import { loadDetailsCache, saveDetailsCache } from './store.ts';
+import { loadDetailsCache, saveDetailsCache, updateSyncMetadata } from './store.ts';
 
 const REALTOR_HOST = 'https://realtor.realtyapi.io';
 
@@ -830,3 +838,128 @@ export async function clipListingFromUrl(
     brokerage: /oldpurchase/i.test(trimmed) ? 'Old Purchase Properties' : 'Clipped Web Listing',
   };
 }
+
+const DOSSIERS_CACHE_FILE = path.resolve(process.cwd(), '.data/parcel-dossiers.json');
+
+export async function fetchOffMarketParcelDossier(
+  rawAddress: string,
+  apiKey: string
+): Promise<OffMarketDossier> {
+  const cleanKey = rawAddress.trim().toLowerCase().replace(/\s+/g, ' ');
+  let cache: Record<string, OffMarketDossier> = {};
+  if (fs.existsSync(DOSSIERS_CACHE_FILE)) {
+    try {
+      cache = JSON.parse(fs.readFileSync(DOSSIERS_CACHE_FILE, 'utf-8')) as Record<
+        string,
+        OffMarketDossier
+      >;
+    } catch {
+      cache = {};
+    }
+  }
+
+  if (cache[cleanKey]) {
+    return { ...cache[cleanKey], fromCache: true };
+  }
+
+  if (!apiKey) {
+    throw new Error('No REALTYAPI_KEY configured.');
+  }
+
+  const fullQuery = /bellport/i.test(rawAddress)
+    ? rawAddress
+    : `${rawAddress}, Bellport, NY 11713`;
+
+  const u = new URL(`${REALTOR_HOST}/details/byaddress`);
+  u.searchParams.set('address', fullQuery);
+
+  const res = await fetch(u, {
+    headers: { 'x-realtyapi-key': apiKey, Accept: 'application/json' },
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Dossier lookup failed (${res.status}): ${errText.slice(0, 140)}`);
+  }
+
+  const rem = Number(res.headers.get('x-credits-remaining') ?? NaN);
+  const lim = Number(res.headers.get('x-credits-limit') ?? NaN);
+  if (Number.isFinite(rem)) {
+    updateSyncMetadata({
+      creditsRemaining: rem,
+      creditsLimit: Number.isFinite(lim) ? lim : undefined,
+    });
+  }
+
+  const payload = asObj(await res.json());
+  const d = asObj(payload.detail ?? unwrapDetailObject(payload));
+  const det = asObj(d.details ?? d.description);
+
+  const archivedPhotos = extractPhotos(d);
+  for (const ev of asArr(d.property_history)) {
+    for (const ph of asArr(asObj(ev).photos)) {
+      const up = upgradeRdcpixUrl(str(ph));
+      if (up && !archivedPhotos.includes(up)) archivedPhotos.push(up);
+    }
+  }
+
+  const avmEstimates: Array<{ source: string; estimate: number }> = [];
+  for (const cv of asArr(asObj(d.estimates).current_values)) {
+    const cvo = asObj(cv);
+    const srcName = str(asObj(cvo.source).name) || 'Valuation Model';
+    const estVal = num(cvo.estimate);
+    if (estVal > 0) avmEstimates.push({ source: srcName, estimate: Math.round(estVal) });
+  }
+
+  const taxHistory: Array<{ year: number; tax: number }> = [];
+  for (const th of asArr(d.tax_history).slice(0, 5)) {
+    const tho = asObj(th);
+    const yr = num(tho.year);
+    const tx = num(tho.tax);
+    if (yr > 1990 && tx > 0) taxHistory.push({ year: yr, tax: Math.round(tx) });
+  }
+
+  const propertyHistory: Array<{ date: string; event: string; price: number; source: string }> = [];
+  for (const ev of asArr(d.property_history).slice(0, 10)) {
+    const eo = asObj(ev);
+    const date = str(eo.date).slice(0, 10);
+    if (!date) continue;
+    propertyHistory.push({
+      date,
+      event: str(eo.event_name) || 'Event',
+      price: num(eo.price),
+      source: str(eo.source_name) || 'Record',
+    });
+  }
+
+  const flood = asObj(asObj(d.local).flood);
+  const femaArr = asArr(flood.fema_zone);
+
+  const dossier: OffMarketDossier = {
+    address: rawAddress,
+    fetchedAt: new Date().toISOString(),
+    fromCache: false,
+    creditsRemaining: Number.isFinite(rem) ? rem : undefined,
+    lastSoldPrice: num(d.last_sold_price) || null,
+    lastSoldDate: str(d.last_sold_date).slice(0, 10) || null,
+    sqft: num(det.sqft) || null,
+    yearBuilt: num(det.year_built) || null,
+    beds: num(det.beds) || null,
+    baths: num(det.baths) || null,
+    streetViewUrl: str(d.street_view_url) || null,
+    archivedPhotos: archivedPhotos.slice(0, 12),
+    avmEstimates,
+    taxHistory,
+    propertyHistory,
+    floodZone: str(femaArr[0] ?? flood.fema_zone) || null,
+    floodFactor: num(flood.flood_factor_score) || null,
+    floodInsuranceText: str(flood.flood_insurance_text).replace(/<[^>]+>/g, '') || null,
+  };
+
+  cache[cleanKey] = dossier;
+  fs.mkdirSync(path.dirname(DOSSIERS_CACHE_FILE), { recursive: true });
+  fs.writeFileSync(DOSSIERS_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf-8');
+
+  return dossier;
+}
+

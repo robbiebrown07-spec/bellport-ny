@@ -1127,3 +1127,9 @@ mark.kw-hit {
   border: 1px dashed var(--line-strong);
   background: var(--surface-subtle);
 }
+
+@media (max-width: 960px) {
+  .village-map-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -47,6 +47,7 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { FavoritesAndTasteView } from './components/FavoritesAndTasteView';
 import { StreetAlertsView } from './components/StreetAlertsView';
 import { PriceDropsHistoryView } from './components/PriceDropsHistoryView';
+import { VillageParcelMapView } from './components/VillageParcelMapView';
 import { CornerDock } from './components/CornerDock';
 import { useCountUp } from './components/useCountUp';
 
@@ -137,7 +138,9 @@ function readFiltersFromUrl(): FilterState {
   const marketStatus = sp.get('status');
 
   const validView: PrimaryView =
-    view === 'favorites' || view === 'alerts' || view === 'history' ? view : 'listings';
+    view === 'map' || view === 'favorites' || view === 'alerts' || view === 'history'
+      ? view
+      : 'listings';
 
   const validSorts: Array<FilterState['sortBy']> = [
     'newest',
@@ -341,6 +344,7 @@ export const App: React.FC = () => {
 
     return {
       listings: allListings.length,
+      parcels: 1213,
       favorites: allListings.filter((l) => l.isFavorite).length,
       alertHits: uniqueAlertHitIds.size,
       priceDrops,
@@ -546,6 +550,15 @@ export const App: React.FC = () => {
       />
 
       <main>
+        {filters.view === 'map' && (
+          <VillageParcelMapView
+            listings={allListings}
+            privacyBlur={appState.preferences.privacyBlur}
+            onOpenListingDrawer={(id) => openListingDrawer(id)}
+            onSyncMetaUpdate={(meta) => setSyncMeta(meta)}
+          />
+        )}
+
         {filters.view === 'favorites' && (
           <FavoritesAndTasteView
             listings={allListings}
