@@ -13,14 +13,14 @@ export const AppMark: React.FC<AppMarkProps> = ({ size = 26 }) => (
     aria-hidden="true"
     style={{ flexShrink: 0 }}
   >
-    {/* Red gable roof */}
-    <path d="M14 3 L24 12 L4 12 Z" fill="var(--g-red)" />
-    {/* Blue clapboard facade */}
-    <rect x="6" y="12" width="16" height="10" rx="2.5" fill="var(--g-blue)" />
+    {/* Red geometric gable */}
+    <path d="M4 12.5 L12.5 4 L21 12.5 Z" fill="var(--g-red)" />
     {/* Yellow coastal sun */}
-    <circle cx="22" cy="6.5" r="3" fill="var(--g-yellow)" />
-    {/* Green Bellport Bay shoreline arc */}
-    <path d="M3 23.5 A14 8 0 0 1 25 23.5 L25 26 L3 26 Z" fill="var(--g-green)" />
+    <circle cx="22.5" cy="6.5" r="3.2" fill="var(--g-yellow)" />
+    {/* Blue architectural block */}
+    <rect x="5.5" y="14" width="14" height="6.5" rx="2" fill="var(--g-blue)" />
+    {/* Green Bellport Bay shoreline pill */}
+    <rect x="3" y="22" width="22" height="3.5" rx="1.75" fill="var(--g-green)" />
   </svg>
 );
 

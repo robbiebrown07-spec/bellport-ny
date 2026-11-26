@@ -323,7 +323,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                     cx={cx}
                     cy={cy}
                     r={isHov ? 7 : 5}
-                    fill="#4f9d69"
+                    fill="var(--g-green)"
                     fillOpacity={0.88}
                     stroke="#ffffff"
                     strokeWidth={1.5}
@@ -350,6 +350,28 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
               ))}
             </g>
           </svg>
+
+          <table className="sr-only">
+            <caption>Annual median Bellport Village home sale prices (2017–2026)</caption>
+            <thead>
+              <tr>
+                <th scope="col">Year</th>
+                <th scope="col">Closed Sales</th>
+                <th scope="col">Median {metric === 'ppsf' ? 'Price per Sq Ft' : 'Sale Price'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yearlyMedians.map((row) => (
+                <tr key={row.year}>
+                  <td>{row.year}</td>
+                  <td>{row.count}</td>
+                  <td>
+                    {metric === 'ppsf' ? `$${row.medianVal}/ft²` : `$${row.medianVal.toLocaleString()}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -379,7 +401,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span
-                style={{ width: 9, height: 9, borderRadius: '50%', background: '#4f9d69' }}
+                style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--g-green)' }}
               />
               Closed Sale (click dot to locate on map)
             </span>

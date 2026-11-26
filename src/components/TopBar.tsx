@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Settings } from 'lucide-react';
 import type { PrimaryView } from '../types';
+import { AppMark } from './AppMark';
 
 interface TopBarProps {
   activeView: PrimaryView;
@@ -20,67 +21,50 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   return (
-    <header
-      className={`topbar ${scrolled ? 'is-scrolled' : ''}`}
-      style={{
-        height: 68,
-        background: scrolled ? 'rgba(255, 255, 255, 0.96)' : 'rgba(255, 255, 255, 0.92)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--line)',
-      }}
-    >
-      <div
-        className="container"
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
-        {/* Single Brand Title + Subtitle Tucked Underneath */}
-        <button
-          type="button"
-          onClick={() => onSelectView('map')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            textAlign: 'left',
-            cursor: 'pointer',
-          }}
-        >
-          <div
+    <header className={`topbar ${scrolled ? 'is-scrolled' : ''}`}>
+      <div className="container topbar__inner">
+        <div className="topbar__brand-row">
+          <button
+            type="button"
+            className="topbar__brand"
+            onClick={() => onSelectView('map')}
+          >
+            <AppMark size={26} />
+            <div>
+              <div className="topbar__title">Bellport NY</div>
+              <div className="topbar__subtitle">Search for a beach house</div>
+            </div>
+          </button>
+
+          <button
+            id="btn-open-settings-mobile"
+            type="button"
+            className="icon-btn topbar__settings-mobile"
+            onClick={onOpenSettings}
+            title="Settings & Sync"
+            aria-label="Settings"
             style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 23,
-              lineHeight: 1.05,
-              color: 'var(--ink)',
-              letterSpacing: '-0.02em',
+              width: 36,
+              height: 36,
+              minWidth: 36,
+              minHeight: 36,
+              padding: 0,
+              justifyContent: 'center',
             }}
           >
-            Bellport NY
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, marginTop: 2 }}>
-            Search for a beach house
-          </div>
-        </button>
+            <Settings size={15} />
+          </button>
+        </div>
 
-        {/* Clean Minimal Underline Navigation Tabs (No Count Numbers, No Add Button) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, height: '100%' }}>
-          <nav
-            role="tablist"
-            aria-label="Primary navigation"
-            style={{ display: 'flex', alignItems: 'center', gap: 4, height: '100%' }}
-          >
+        <div className="topbar__right">
+          <nav className="segmented-tabs" role="tablist" aria-label="Primary navigation">
             {NAV_ITEMS.map((item) => {
               const active = activeView === item.id;
               return (
@@ -90,35 +74,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  className={`segmented-tabs__tab ${active ? 'is-active' : ''}`}
                   onClick={() => onSelectView(item.id)}
-                  style={{
-                    position: 'relative',
-                    height: '100%',
-                    padding: '0 10px',
-                    background: 'none',
-                    border: 'none',
-                    fontSize: 13.5,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? 'var(--accent)' : 'var(--ink-2)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    transition: 'color 160ms ease',
-                  }}
                 >
                   <span>{item.label}</span>
-                  {active && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        left: 8,
-                        right: 8,
-                        bottom: 0,
-                        height: 2,
-                        borderRadius: 999,
-                        background: 'var(--accent)',
-                      }}
-                    />
-                  )}
                 </button>
               );
             })}
@@ -127,11 +86,18 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
           <button
             id="btn-open-settings"
             type="button"
-            className="icon-btn"
+            className="icon-btn topbar__settings-desktop"
             onClick={onOpenSettings}
             title="Settings & Sync"
             aria-label="Settings"
-            style={{ width: 32, height: 32, padding: 0, justifyContent: 'center' }}
+            style={{
+              width: 36,
+              height: 36,
+              minWidth: 36,
+              minHeight: 36,
+              padding: 0,
+              justifyContent: 'center',
+            }}
           >
             <Settings size={15} />
           </button>
@@ -140,3 +106,4 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
     </header>
   );
 };
+

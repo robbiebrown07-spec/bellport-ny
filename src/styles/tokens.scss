@@ -1,69 +1,69 @@
 :root {
-  // Pure White Editorial Surface + Selective Signature Blue Accents
+  // Core Four + Tints/Shades (personal-app-blueprint Section 3.1)
   --g-blue: #4285f4;
   --g-blue-600: #1a73e8;
   --g-blue-700: #185abc;
   --g-blue-50: #e8f0fe;
 
-  --g-red: #d93025;
-  --g-red-600: #b3261e;
+  --g-red: #ea4335;
+  --g-red-600: #d93025;
   --g-red-50: #fce8e6;
 
   --g-yellow: #fbbc04;
-  --g-yellow-600: #b06000;
-  --g-yellow-700: #8f4d00;
+  --g-yellow-600: #f9ab00;
+  --g-yellow-700: #b06000;
   --g-yellow-50: #fef7e0;
 
   --g-green: #34a853;
   --g-green-600: #1e8e3e;
   --g-green-50: #e6f4ea;
 
-  // Crisp Neutral White & Ink Scale
+  // Neutral Surface & Ink Scale
   --grey-900: #202124;
   --grey-800: #3c4043;
   --grey-700: #5f6368;
-  --grey-500: #80868b;
+  --grey-500: #9aa0a6;
   --grey-300: #dadce0;
-  --grey-200: #e5e7eb;
+  --grey-200: #e8eaed;
   --grey-100: #f1f3f4;
   --grey-50: #f8f9fa;
   --white: #ffffff;
 
-  // Semantic Aliases (Pure White Site Background + Selective Blue Accents)
-  --bg: #ffffff;
-  --bg-band: #ffffff;
-  --surface: #ffffff;
-  --surface-subtle: #f8f9fa;
-  --ink: #202124;
-  --ink-2: #5f6368;
-  --ink-muted: #80868b;
-  --accent: #1a73e8;
-  --accent-soft: #e8f0fe;
-  --line: #e5e7eb;
-  --line-strong: #dadce0;
+  // Semantic Aliases (Pure White Default + Signature Google Blue Accents)
+  --bg: var(--white);
+  --bg-band: var(--white);
+  --surface: var(--white);
+  --surface-subtle: var(--grey-50);
+  --ink: var(--grey-900);
+  --ink-2: var(--grey-700);
+  --ink-muted: var(--grey-500);
+  --accent: var(--g-blue-600);
+  --accent-soft: var(--g-blue-50);
+  --line: var(--grey-200);
+  --line-strong: var(--grey-300);
 
-  // Typography, Layout, Radii & Motion
-  --font-display: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-  --font-text: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'SFMono-Regular', 'Roboto Mono', Menlo, monospace;
+  // Typography, Layout, Radii & Motion (personal-app-blueprint Section 3.3)
+  --font-display: 'Google Sans Display', 'Google Sans', -apple-system, BlinkMacSystemFont, 'Inter', Roboto, system-ui, sans-serif;
+  --font-text: 'Google Sans Text', 'Google Sans', -apple-system, BlinkMacSystemFont, 'Inter', Roboto, system-ui, sans-serif;
+  --font-mono: 'Google Sans Mono', 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --fs-hero: clamp(30px, 3.8vw, 46px);
-  --fs-h2: clamp(22px, 2.4vw, 30px);
-  --fs-lede: clamp(15px, 1.2vw, 18px);
+  --fs-hero: clamp(32px, 4.2vw, 52px);
+  --fs-h2: clamp(22px, 2.5vw, 32px);
+  --fs-lede: clamp(16px, 1.3vw, 19px);
   --fs-body: 15px;
 
   --radius: 24px;
   --radius-sm: 14px;
   --radius-pill: 999px;
 
-  --shadow-1: 0 1px 2px rgba(24, 35, 44, 0.05), 0 4px 14px rgba(24, 35, 44, 0.04);
-  --shadow-2: 0 10px 28px rgba(24, 35, 44, 0.1), 0 2px 6px rgba(24, 35, 44, 0.05);
+  --shadow-1: 0 1px 2px rgba(60, 64, 67, 0.1), 0 2px 8px rgba(60, 64, 67, 0.06);
+  --shadow-2: 0 8px 24px rgba(60, 64, 67, 0.12), 0 2px 6px rgba(60, 64, 67, 0.08);
 
   --dur-fast: 180ms;
-  --dur-base: 420ms;
-  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-base: 360ms;
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
 
-  --topbar-h: 68px;
+  --topbar-h: 72px;
 }
 
 [data-theme='dark'] {

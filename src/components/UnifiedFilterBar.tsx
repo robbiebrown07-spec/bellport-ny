@@ -146,19 +146,6 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     gap: 6,
   });
 
-  const popoverStyle: React.CSSProperties = {
-    position: 'absolute',
-    top: 'calc(100% + 8px)',
-    left: 0,
-    zIndex: 45,
-    width: 280,
-    background: 'var(--surface)',
-    border: '1px solid var(--line)',
-    borderRadius: 18,
-    boxShadow: 'var(--shadow-2)',
-    padding: 14,
-    fontSize: 12.5,
-  };
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -194,7 +181,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'status' && (
-            <div style={popoverStyle}>
+            <div className="filter-popover">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Property Status
@@ -452,7 +439,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'price' && (
-            <div style={popoverStyle}>
+            <div className="filter-popover">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Price / Est. Value
@@ -528,7 +515,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'size' && (
-            <div style={{ ...popoverStyle, width: 295, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="filter-popover" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Home Size
@@ -647,7 +634,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'lot' && (
-            <div style={popoverStyle}>
+            <div className="filter-popover">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Lot Size (Acres)
@@ -714,7 +701,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'area' && (
-            <div style={popoverStyle}>
+            <div className="filter-popover">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Village Area
@@ -799,7 +786,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <ChevronDown size={13} />
           </button>
           {openMenu === 'feat' && (
-            <div style={{ ...popoverStyle, width: 295, maxHeight: 380, overflowY: 'auto' }}>
+            <div className="filter-popover filter-popover--right" style={{ maxHeight: 380, overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
                   Features &amp; Design
