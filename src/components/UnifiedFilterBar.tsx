@@ -13,6 +13,8 @@ import {
   type UnifiedFilters,
 } from '../lib/unifiedCatalog';
 import { parseNaturalLanguageQuery } from '../lib/nlSearch';
+import { answerVillageQuestion, useVillageQa } from '../lib/villageQa';
+import { VillageQaCard } from './VillageQaCard';
 
 interface UnifiedFilterBarProps {
   filters: UnifiedFilters;
@@ -139,7 +141,12 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 
   const patch = (p: Partial<UnifiedFilters>) => onChange({ ...filters, ...p });
 
+  const qaCtx = useVillageQa();
   const parsedNl = useMemo(() => parseNaturalLanguageQuery(filters.nlQuery), [filters.nlQuery]);
+  const qaAnswer = useMemo(
+    () => (qaCtx && filters.nlQuery.trim() ? answerVillageQuestion(filters.nlQuery, qaCtx, filters) : null),
+    [filters, qaCtx]
+  );
 
   // Summaries
   const statusParts: string[] = [];
@@ -352,6 +359,15 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           </button>
         )}
       </div>
+
+      {qaCtx && qaAnswer && (
+        <VillageQaCard
+          query={filters.nlQuery}
+          answer={qaAnswer}
+          qaCtx={qaCtx}
+          onClear={() => patch({ nlQuery: '' })}
+        />
+      )}
 
       {/* Structured Filter Dropdown Row */}
       <div

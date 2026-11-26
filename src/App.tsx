@@ -21,6 +21,7 @@ import { evaluateGoodDeal } from './lib/intelligence';
 import { evaluateRobbieFit } from './lib/robbieFit';
 import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
 import { parseNaturalLanguageQuery } from './lib/nlSearch';
+import { VillageQaContext } from './lib/villageQa';
 import {
   INITIAL_UNIFIED_FILTERS,
   buildUnifiedVillageCatalog,
@@ -284,7 +285,7 @@ export const App: React.FC = () => {
   );
 
   const matchedHomes = useMemo(() => {
-    const list = catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, true));
+    const list = catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, true, tasteFilters));
     list.sort((a, b) => {
       if (sortBy === 'featured') {
         if (a.isForSale !== b.isForSale) return a.isForSale ? -1 : 1;
@@ -330,7 +331,21 @@ export const App: React.FC = () => {
       return 0;
     });
     return list;
-  }, [allListings, catalog, parsedNl.sortHint, sortBy, unifiedFilters]);
+  }, [allListings, catalog, parsedNl.sortHint, sortBy, tasteFilters, unifiedFilters]);
+
+  const qaContextValue = useMemo(
+    () => ({
+      catalog,
+      salesHistory,
+      allListings,
+      tasteFilters,
+      activeFilters: unifiedFilters,
+      idealSearchNotes,
+      onOpenHome: (pid: string) => setSelectedParcelOrListingId(pid),
+      onOpenSavedTab: () => setActiveView('favorites'),
+    }),
+    [allListings, catalog, idealSearchNotes, salesHistory, tasteFilters, unifiedFilters]
+  );
 
   const visibleHomes = useMemo(
     () => matchedHomes.slice(0, homesLimit),
@@ -513,6 +528,7 @@ export const App: React.FC = () => {
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
+      <VillageQaContext.Provider value={qaContextValue}>
       <main>
         {activeView === 'map' && (
           <VillageParcelMapView
@@ -1087,6 +1103,7 @@ export const App: React.FC = () => {
           </>
         )}
       </main>
+      </VillageQaContext.Provider>
 
       {/* Universal Slide-Over Property Detail Sheet (Opens for ANY of the 1,058 Village Homes!) */}
       <PropertyDrawer

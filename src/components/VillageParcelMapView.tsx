@@ -56,6 +56,7 @@ import { ValuationBadge } from './ValuationBadge';
 import { RobbieFitBadge } from './RobbieFitBadge';
 import { SkimmablePropertyNotes } from './SkimmablePropertyNotes';
 import { ScrollReveal } from './ScrollReveal';
+import { useVillageQa } from '../lib/villageQa';
 
 interface VillageParcelMapViewProps {
   listings: Listing[];
@@ -262,6 +263,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     [catalog]
   );
 
+  const qaCtx = useVillageQa();
   const filtering = isAnyUnifiedFilterActive(unifiedFilters);
   const parsedNl = useMemo(
     () => parseNaturalLanguageQuery(unifiedFilters.nlQuery),
@@ -270,7 +272,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
   const matchedHomes = useMemo<UnifiedHome[]>(() => {
     const list = filtering
-      ? catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, false))
+      ? catalog.filter((h) => homeMatchesUnifiedFilters(h, unifiedFilters, false, qaCtx?.tasteFilters))
       : catalog.filter((h) => h.isForSale && !h.isHidden);
 
     list.sort((a, b) => {
@@ -295,7 +297,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       return b.price - a.price;
     });
     return list;
-  }, [catalog, filtering, parsedNl.sortHint, unifiedFilters]);
+  }, [catalog, filtering, parsedNl.sortHint, qaCtx?.tasteFilters, unifiedFilters]);
 
   const applyFilters = useCallback(
     (next: UnifiedFilters) => {

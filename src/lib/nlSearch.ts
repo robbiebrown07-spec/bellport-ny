@@ -1,6 +1,8 @@
 export interface ParsedNaturalQuery {
   raw: string;
   active: boolean;
+  isQuestion: boolean;
+  useSavedParameters: boolean;
   chips: string[];
   statusIntent: 'for_sale' | 'past_sales' | 'all_homes' | null;
   soldYears: number | null;
@@ -82,19 +84,47 @@ const STOP_WORDS = new Set([
   'a', 'an', 'the', 'all', 'every', 'any', 'some', 'only', 'just', 'both', 'either',
   'house', 'houses', 'home', 'homes', 'property', 'properties', 'listing', 'listings', 'place', 'places', 'residence', 'residences',
   'in', 'on', 'at', 'by', 'near', 'close', 'to', 'from', 'of', 'for', 'with', 'without', 'having', 'has', 'have', 'had',
-  'and', 'or', 'that', 'which', 'who', 'are', 'is', 'be', 'was', 'were',
-  'show', 'find', 'search', 'list', 'give', 'get', 'see', 'looking', 'want', 'me', 'my', 'our', 'us',
+  'and', 'or', 'that', 'which', 'who', 'are', 'is', 'be', 'was', 'were', 'those', 'these', 'them', 'they', 'it', 'its', 'there',
+  'show', 'find', 'search', 'list', 'give', 'get', 'see', 'looking', 'want', 'me', 'my', 'our', 'us', 'your',
   'bellport', 'village', 'incorporated', 'ny', 'new', 'york',
   'good', 'great', 'nice', 'lovely', 'pretty', 'really', 'very', 'super', 'most', 'more', 'lots', 'lot',
   'family', 'vacation', 'summer', 'weekend',
+  'how', 'many', 'much', 'often', 'what', 'whats', 'where', 'when', 'why', 'do', 'does', 'did', 'can', 'could', 'would', 'should',
+  'sell', 'sells', 'sold', 'sale', 'sales', 'selling', 'per', 'year', 'years', 'annual', 'annually', 'each',
+  'average', 'avg', 'median', 'typical', 'typically', 'usually', 'total', 'count', 'number', 'percent', 'percentage', 'share', 'rate', 'turnover',
+  'meet', 'meets', 'meeting', 'match', 'matches', 'matching', 'fit', 'fits', 'fitting',
+  'parameter', 'parameters', 'criteria', 'criterion', 'filter', 'filters', 'target', 'targets', 'profile', 'taste', 'ideal', 'requirements', 'specs',
+  'tell', 'compare', 'explain', 'price', 'prices', 'cost', 'costs', 'come', 'comes', 'market',
 ]);
+
+export function detectQuestionQuery(rawInput: string): boolean {
+  const raw = rawInput.trim();
+  if (!raw) return false;
+  if (raw.includes('?')) return true;
+  return (
+    /^\s*(?:how|what|what's|whats|which|where|when|why|who|do|does|did|is|are|can|could|would|tell\s+me|compare|explain)\b/i.test(
+      raw
+    ) ||
+    /\b(?:how\s+many|how\s+much|how\s+often|per\s+year|each\s+year|annually|average\s+price|median\s+price|turnover|meet\s+(?:our|my)|match\s+(?:our|my))\b/i.test(
+      raw
+    )
+  );
+}
 
 export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery {
   const raw = rawInput.trim();
   const s = raw.toLowerCase();
+  const isQuestion = detectQuestionQuery(raw);
+  const useSavedParameters =
+    /\b(?:meet|meets|meeting|match|matches|matching|fit|fits|fitting)\s+(?:our|my|the)\s+(?:search|parameters?|criteria|filters?|targets?|profile|taste|needs|requirements|specs)\b|\b(?:our|my)\s+(?:search\s+parameters?|search\s+criteria|criteria|parameters?|filters?|taste\s+profile|ideal\s+search|targets?)\b/i.test(
+      s
+    );
+
   const res: ParsedNaturalQuery = {
     raw,
     active: raw.length > 0,
+    isQuestion,
+    useSavedParameters,
     chips: [],
     statusIntent: null,
     soldYears: null,
@@ -131,6 +161,13 @@ export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery 
   const consume = (rx: RegExp) => {
     working = working.replace(rx, ' ');
   };
+
+  if (useSavedParameters) {
+    res.chips.push('Matches Your Search Parameters');
+    consume(
+      /\b(?:meet|meets|meeting|match|matches|matching|fit|fits|fitting)\s+(?:our|my|the)\s+(?:search\s+parameters?|search|parameters?|criteria|filters?|targets?|profile|taste|needs|requirements|specs)\b|\b(?:our|my)\s+(?:search\s+parameters?|search\s+criteria|criteria|parameters?|filters?|taste\s+profile|ideal\s+search|targets?)\b/gi
+    );
+  }
 
   // 1. Market status intent ("all white houses" without "for sale" searches across all 1,058 Village homes!)
   if (/\b(for\s+sale|on\s+the\s+market|active\s+listings?|currently\s+listed|available\s+now)\b/.test(s)) {
@@ -568,12 +605,23 @@ export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery 
     consume(/\b(good\s+fit|fits?\s+me)\b/g);
   }
 
+  if (
+    isQuestion &&
+    !res.statusIntent &&
+    /\b(?:sell|sells|sold|sales|per\s+year|each\s+year|annually|turnover)\b/i.test(s)
+  ) {
+    res.statusIntent = 'past_sales';
+  }
+
   // 12. Residual non-stopword tokens (e.g. exact street number "37 bellport", owner surname, or niche keyword)
-  const leftover = working
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .map((w) => w.trim())
-    .filter((w) => w.length >= 1 && (/\d/.test(w) || (w.length >= 3 && !STOP_WORDS.has(w))));
+  // For analytical/conversational questions, suppress stray conversational tokens so results below never zero out!
+  const leftover = isQuestion
+    ? []
+    : working
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 1 && (/\d/.test(w) || (w.length >= 3 && !STOP_WORDS.has(w))));
 
   res.residualTokens = leftover;
   if (leftover.length > 0 && res.chips.length === 0) {

@@ -182,7 +182,7 @@ export function fmtShortDollar(n: number): string {
 export function resolveAssetUrl(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   if (/^(https?:|data:|blob:)/i.test(raw)) return raw;
-  const base = import.meta.env.BASE_URL || '/';
+  const base = import.meta.env?.BASE_URL || '/';
   return `${base.endsWith('/') ? base : `${base}/`}${raw.replace(/^\//, '')}`;
 }
 
@@ -504,7 +504,8 @@ export function toPseudoListing(h: UnifiedHome): Listing {
 export function homeMatchesUnifiedFilters(
   h: UnifiedHome,
   filters: UnifiedFilters,
-  isDirectoryMode: boolean
+  isDirectoryMode: boolean,
+  savedTasteFilters?: UnifiedFilters
 ): boolean {
   if (h.isHidden) return false;
   const nl = filters.nlQuery.trim() ? parseNaturalLanguageQuery(filters.nlQuery) : null;
@@ -516,7 +517,12 @@ export function homeMatchesUnifiedFilters(
     filters.allPastSales ||
     filters.allHomes;
 
-  if (anyStatus) {
+  if (nl?.isQuestion && nl.statusIntent === 'past_sales') {
+    if (!h.hasPastSale) return false;
+    if (nl.soldYears && (!h.soldYear || h.soldYear < CURRENT_VILLAGE_YEAR - nl.soldYears)) {
+      return false;
+    }
+  } else if (anyStatus) {
     let ok = false;
     if (filters.allHomes) ok = true;
     if (filters.forSale && h.isForSale) ok = true;
@@ -544,6 +550,65 @@ export function homeMatchesUnifiedFilters(
     // On the Homes directory tab, default to active For Sale listings unless the user
     // explicitly selected Past Sales, Sold Recently, Built Recently, or All Village Homes.
     if (!h.isForSale) return false;
+  }
+
+  // When a query asks about "our search parameters" / "my criteria", enforce saved Taste Profile criteria (or Robbie Fit)
+  if (nl?.useSavedParameters) {
+    const tf = savedTasteFilters;
+    const hasCustomTaste =
+      tf &&
+      (tf.minPrice !== null ||
+        tf.maxPrice !== null ||
+        tf.minBeds !== null ||
+        tf.maxBeds !== null ||
+        tf.minBaths !== null ||
+        tf.maxBaths !== null ||
+        tf.minSqft !== null ||
+        tf.maxSqft !== null ||
+        tf.minLot !== null ||
+        tf.maxLot !== null ||
+        tf.belowSC ||
+        tf.beautifulStreetsOnly ||
+        tf.beautifulStreets.length > 0 ||
+        tf.areas.length > 0 ||
+        tf.feats.length > 0);
+
+    const hasInlineStruct =
+      filters.minPrice !== null ||
+      filters.maxPrice !== null ||
+      filters.minBeds !== null ||
+      filters.minBaths !== null ||
+      filters.minSqft !== null ||
+      filters.minLot !== null ||
+      filters.belowSC ||
+      filters.beautifulStreetsOnly ||
+      filters.beautifulStreets.length > 0 ||
+      filters.areas.length > 0 ||
+      filters.feats.length > 0;
+
+    if (hasCustomTaste && tf) {
+      if (
+        !homeMatchesUnifiedFilters(
+          h,
+          {
+            ...tf,
+            forSale: false,
+            allPastSales: false,
+            allHomes: true,
+            soldRecent: false,
+            builtRecent: false,
+            nlQuery: '',
+          },
+          false
+        )
+      ) {
+        return false;
+      }
+    } else if (!hasInlineStruct) {
+      // Default to Robbie's Architectural & Grounds Fit profile (Good / Great / ★ Perfect Fit)
+      const fit = evaluateRobbieFit(toPseudoListing(h));
+      if (!fit.tier) return false;
+    }
   }
 
   // Always compare against the exact displayed price (`h.price`) so no card ever exceeds maxPrice or falls below minPrice
