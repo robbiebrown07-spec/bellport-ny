@@ -93,7 +93,34 @@ export interface StreetAlertRule {
   createdAt: string;
 }
 
-export type PrimaryView = 'listings' | 'map' | 'favorites' | 'alerts' | 'history';
+export type EmailAlertFrequency = 'immediately' | 'daily' | 'weekly';
+
+export type AlertPoolMode = 'any' | 'pool_only' | 'pool_or_room' | 'room_only';
+
+export interface EmailAlertRule {
+  id: string;
+  name: string;
+  email: string;
+  frequency: EmailAlertFrequency;
+  minPrice: number | null;
+  maxPrice: number | null;
+  minBeds: number | null;
+  minBaths: number | null;
+  minSqft: number | null;
+  minLotAcres: number | null;
+  belowSC: boolean;
+  beautifulStreetsOnly: boolean;
+  selectedStreets: string[];
+  poolMode: AlertPoolMode;
+  feats: string[];
+  naturalQuery: string;
+  notifyOnPriceDrop: boolean;
+  enabled: boolean;
+  createdAt: string;
+  lastTriggeredAt?: string | null;
+}
+
+export type PrimaryView = 'listings' | 'map' | 'favorites' | 'alerts' | 'history' | 'about';
 
 export type ParcelStatusCategory = 'for_sale' | 'built_3yr' | 'sold_3yr' | 'other';
 
@@ -143,6 +170,12 @@ export interface VillageParcel {
   style?: string;
   styleSummary?: string;
   feats?: string[];
+  beautifulStreet?: boolean;
+  beautifulStreetId?: string;
+  beautifulStreetName?: string;
+  extColor?: string;
+  openLawnAc?: number;
+  traits?: string[];
   poiKind?: VillagePoiKind;
   poiName?: string;
   rings: number[][][];
@@ -163,10 +196,23 @@ export interface HistoricalSaleRecord {
   inVillage: boolean;
   area: BellportMicroArea;
   belowSC?: boolean;
+  beautifulStreet?: string | null;
   pool: boolean;
   ppsf?: number | null;
   parcelId?: string | null;
   source: string;
+}
+
+export interface BeautifulStreetSection {
+  id: string;
+  name: string;
+  shortName: string;
+  subtitle: string;
+  description: string;
+  homeCount: number;
+  labelLon: number;
+  labelLat: number;
+  segments: number[][][];
 }
 
 export interface VillageStreet {
@@ -192,6 +238,10 @@ export interface VillagePoi {
   addr: string;
   desc: string;
   parcelId?: string | null;
+  photoUrl?: string;
+  websiteUrl?: string;
+  websiteLabel?: string;
+  mapsUrl?: string;
 }
 
 export interface VillageParcelsBundle {
@@ -210,10 +260,21 @@ export interface VillageParcelsBundle {
   };
   bbox: { west: number; south: number; east: number; north: number };
   aerialBounds: { west: number; south: number; east: number; north: number; z: number };
+  bayAerialBounds?: { west: number; south: number; east: number; north: number; z: number };
   boundaryRings: number[][][];
   waterRings?: number[][][];
+  fireIslandRings?: number[][][];
+  hoHumBeachRings?: number[][][];
+  ferryRoute?: {
+    name: string;
+    durationText: string;
+    northDock: { name: string; lon: number; lat: number };
+    southDock: { name: string; lon: number; lat: number };
+    waypoints: number[][];
+  };
   outsideBldgs?: number[][][];
   southCountryLine?: number[][];
+  beautifulStreets?: BeautifulStreetSection[];
   streets: VillageStreet[];
   streetLabels: VillageStreetLabel[];
   pois: VillagePoi[];
@@ -285,7 +346,9 @@ export interface PersistedAppState {
   schemaVersion: typeof SCHEMA_VERSION;
   updatedAt: string;
   listings: Listing[];
+  savedParcelIds?: Record<string, boolean>;
   streetAlerts?: StreetAlertRule[];
+  emailAlerts?: EmailAlertRule[];
   aiTasteMemo?: {
     text: string;
     basedOnIds: string[];

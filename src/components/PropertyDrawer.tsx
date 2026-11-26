@@ -4,18 +4,37 @@ import {
   ChevronRight,
   ExternalLink,
   Heart,
+  Home,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import type { Listing, PricePoint } from '../types';
-import { evaluateAirbnbViability, evaluateGoodDeal } from '../lib/intelligence';
+import { evaluateGoodDeal } from '../lib/intelligence';
+import { evaluateRobbieFit } from '../lib/robbieFit';
+import {
+  evaluateArchitecturalBeauty,
+  getOwnerAndAirbnbProfile,
+} from '../lib/ownerAndAirbnb';
 import { PhotoGallery } from './PhotoGallery';
 import { PriceHistoryChart } from './PriceHistoryChart';
 import { HighlightedText } from './HighlightedText';
+import { ValuationBadge } from './ValuationBadge';
+import { RobbieFitBadge } from './RobbieFitBadge';
+import { SkimmablePropertyNotes } from './SkimmablePropertyNotes';
+import { getVillageDistances } from '../lib/unifiedCatalog';
+
+export interface ParcelOwnerMeta {
+  parcelId?: string | null;
+  owner?: string | null;
+  mail?: string | null;
+  absentee?: boolean;
+}
 
 interface PropertyDrawerProps {
   listing: Listing | null;
+  parcelMeta?: ParcelOwnerMeta | null;
   allListings: Listing[];
   privacyBlur: boolean;
   searchQuery: string;
@@ -28,22 +47,9 @@ interface PropertyDrawerProps {
   onDeleteListing: (id: string) => void;
 }
 
-const TONE_BG: Record<'green' | 'blue' | 'yellow' | 'red', string> = {
-  green: 'var(--g-green-50)',
-  blue: 'var(--g-blue-50)',
-  yellow: 'var(--g-yellow-50)',
-  red: 'var(--g-red-50)',
-};
-
-const TONE_INK: Record<'green' | 'blue' | 'yellow' | 'red', string> = {
-  green: 'var(--g-green-600)',
-  blue: 'var(--g-blue-700)',
-  yellow: 'var(--grey-900)',
-  red: 'var(--g-red-600)',
-};
-
 export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   listing,
+  parcelMeta,
   allListings,
   privacyBlur,
   searchQuery,
@@ -88,7 +94,15 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
 
   const ppsf = listing.sqft > 0 ? Math.round(listing.price / listing.sqft) : 0;
   const deal = evaluateGoodDeal(listing, allListings);
-  const airbnb = evaluateAirbnbViability(listing);
+  const fit = evaluateRobbieFit(listing);
+  const beauty = evaluateArchitecturalBeauty(listing);
+  const ownerAirbnb = getOwnerAndAirbnbProfile({
+    parcelId: parcelMeta?.parcelId ?? listing.id,
+    owner: parcelMeta?.owner,
+    mail: parcelMeta?.mail,
+    absentee: parcelMeta?.absentee,
+    listing,
+  });
 
   const handleAddTag = (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,7 +183,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 fill={listing.isFavorite ? 'var(--g-red)' : 'none'}
                 color={listing.isFavorite ? 'var(--g-red)' : 'currentColor'}
               />
-              <span>{listing.isFavorite ? 'Favorited' : 'Favorite'}</span>
+              <span>{listing.isFavorite ? 'Saved' : 'Save'}</span>
             </button>
 
             <button
@@ -194,13 +208,23 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
           />
 
           <div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+              <RobbieFitBadge listing={listing} fit={fit} />
               <span className={`badge ${listing.inVillage ? 'badge--village' : 'badge--outside'}`}>
                 {listing.inVillage
                   ? 'Incorporated Village ✓ (Ho-Hum Ferry + Marina)'
                   : 'Outside Village Boundary (No Ho-Hum Ferry)'}
               </span>
-              <span className="badge">Flood Zone {listing.floodZone}</span>
+              <span
+                className="badge"
+                style={
+                  listing.floodZone !== 'X'
+                    ? { background: '#fef7e0', color: '#b06000', borderColor: 'rgba(251,188,4,0.5)' }
+                    : undefined
+                }
+              >
+                Flood Zone {listing.floodZone}
+              </span>
               <span className="badge" style={{ textTransform: 'capitalize' }}>
                 {listing.marketStatus}
               </span>
@@ -219,7 +243,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             )}
           </div>
 
-          {/* Core Specs Grid */}
+          {/* Core Specs Grid (Includes Bed/Bath, Sq Ft, $/Ft², Acres, 10-Pt Architectural Beauty & Distances) */}
           <div
             style={{
               display: 'grid',
@@ -233,7 +257,11 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
           >
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                {listing.marketStatus === 'sold' ? 'Sold Price' : 'Asking Price'}
+                {listing.marketStatus === 'sold'
+                  ? 'Sold Price'
+                  : listing.marketStatus === 'off-market'
+                    ? 'Est. Market Value'
+                    : 'Asking Price'}
               </div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
                 ${listing.price.toLocaleString()}
@@ -246,10 +274,19 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               </strong>
             </div>
             <div>
-              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Est. Fair Value</div>
-              <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
-                ${deal.estimatedFairPrice.toLocaleString()}
+              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Architectural Beauty</div>
+              <strong
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 18,
+                  color: beauty.score10 >= 8.5 ? 'var(--accent)' : 'var(--ink)',
+                }}
+              >
+                {beauty.display}
               </strong>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 1 }}>
+                {beauty.tierLabel}
+              </div>
             </div>
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Bedrooms / Baths</div>
@@ -269,9 +306,61 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 {listing.lotAcres} acres
               </strong>
             </div>
+            {(() => {
+              const dists = getVillageDistances(listing.latitude, listing.longitude);
+              return (
+                <>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                      Commercial District Stores
+                    </div>
+                    <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 15 }}>
+                      {dists.distStoresMi} mi · {dists.walkStoresMin}m walk
+                    </strong>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                      Town Marina &amp; Ferry
+                    </div>
+                    <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 15 }}>
+                      {dists.distMarinaMi} mi · {dists.walkMarinaMin}m walk
+                    </strong>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Est. Fair Value</div>
+                    <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 15 }}>
+                      ${deal.estimatedFairPrice.toLocaleString()}
+                    </strong>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
-          {/* Valuation & Rental Assessment Cards */}
+          {/* Architectural Beauty Rationale Callout */}
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: '#f8fafd',
+              border: '1px solid rgba(26, 115, 232, 0.18)',
+              fontSize: 12.5,
+              color: 'var(--ink-2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Sparkles size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+            <span>
+              <strong style={{ color: 'var(--ink)' }}>
+                Architectural Beauty {beauty.display}:
+              </strong>{' '}
+              {beauty.rationale}
+            </span>
+          </div>
+
+          {/* Valuation & Owner Residency / Airbnb Cards */}
           <div className="form-grid">
             <div
               style={{
@@ -288,19 +377,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>
                   VALUATION
                 </span>
-                <span
-                  className="priv-val"
-                  style={{
-                    padding: '3px 10px',
-                    borderRadius: 'var(--radius-pill)',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: TONE_BG[deal.tone],
-                    color: TONE_INK[deal.tone],
-                  }}
-                >
-                  {deal.badgeLabel}
-                </span>
+                <ValuationBadge listing={listing} deal={deal} />
               </div>
               <div style={{ fontSize: 13 }} className="priv-val">
                 Est. Village value:{' '}
@@ -326,41 +403,112 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>
-                  AIRBNB & RENTAL
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Home size={13} />
+                  <span>OWNER &amp; AIRBNB</span>
                 </span>
                 <span
                   style={{
-                    padding: '3px 10px',
+                    padding: '3px 9px',
                     borderRadius: 'var(--radius-pill)',
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: 700,
-                    background: TONE_BG[airbnb.tone],
-                    color: TONE_INK[airbnb.tone],
+                    background: ownerAirbnb.isListedOnAirbnb
+                      ? '#e6f4ea'
+                      : ownerAirbnb.residencyStatus === 'second_home'
+                        ? '#e8f0fe'
+                        : 'var(--bg)',
+                    color: ownerAirbnb.isListedOnAirbnb
+                      ? '#137333'
+                      : ownerAirbnb.residencyStatus === 'second_home'
+                        ? '#174ea6'
+                        : 'var(--ink-2)',
+                    border: '1px solid var(--line)',
                   }}
                 >
-                  {airbnb.score}/100 · {airbnb.legalBadge}
+                  {ownerAirbnb.isListedOnAirbnb
+                    ? 'Active on Airbnb ✓'
+                    : ownerAirbnb.residencyStatus === 'second_home'
+                      ? 'Second Home'
+                      : 'Full-Time Local'}
                 </span>
               </div>
-              <div style={{ fontSize: 13 }} className="priv-val">
-                {airbnb.airbnbShortStayLegal ? (
-                  <>
-                    Peak ~<strong>${airbnb.estNightlyPeak}/nt</strong> · August ~
-                    <strong>${airbnb.estAugustGross.toLocaleString()}</strong> (
-                    {airbnb.taxOffsetPct}% of annual taxes)
-                  </>
-                ) : (
-                  <>
-                    30-day summer lease ~<strong>${airbnb.estAugustGross.toLocaleString()}/mo</strong>
-                  </>
-                )}
+
+              {ownerAirbnb.hasOwnerRecord && (
+                <div style={{ fontSize: 12.5, color: 'var(--ink)' }}>
+                  <strong>Roll Owner:</strong> {ownerAirbnb.ownerDisplay} (
+                  {ownerAirbnb.ownershipStructure})
+                </div>
+              )}
+
+              <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45 }}>
+                <strong style={{ color: 'var(--ink)' }}>{ownerAirbnb.residencyBadge}.</strong>{' '}
+                {ownerAirbnb.residencySummary}
               </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {airbnb.notes.slice(0, 3).map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
+
+              {ownerAirbnb.airbnbRecord ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: '#ffffff',
+                    border: '1px solid rgba(19, 115, 51, 0.28)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 5,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <strong style={{ fontSize: 12.5, color: '#137333' }}>
+                      Verified Airbnb Listing ({ownerAirbnb.airbnbRecord.rating})
+                    </strong>
+                    <a
+                      href={ownerAirbnb.airbnbRecord.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'var(--accent)',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <span>Open Airbnb</span>
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink)' }}>
+                    “{ownerAirbnb.airbnbRecord.title}” · Host: {ownerAirbnb.airbnbRecord.host}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-2)' }} className="priv-val">
+                    Peak ~<strong>${ownerAirbnb.estPeakNightly.toLocaleString()}/nt</strong> · Off-peak ~
+                    <strong>${ownerAirbnb.estShoulderNightly}/nt</strong> · Est. Annual Gross:{' '}
+                    <strong>${ownerAirbnb.estAnnualAirbnbRevenue.toLocaleString()}/yr</strong>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    paddingTop: 6,
+                    borderTop: '1px dashed var(--line)',
+                    fontSize: 12,
+                    color: 'var(--ink-2)',
+                  }}
+                  className="priv-val"
+                >
+                  <strong style={{ color: 'var(--ink)' }}>Not currently listed on Airbnb.</strong>{' '}
+                  If hosted seasonally: Est. Peak ~
+                  <strong>${ownerAirbnb.estPeakNightly.toLocaleString()}/nt</strong> · August ~
+                  <strong>${ownerAirbnb.estAugustGross.toLocaleString()}</strong> · Est. Annual ~
+                  <strong>${ownerAirbnb.estAnnualAirbnbRevenue.toLocaleString()}/yr</strong> (
+                  {ownerAirbnb.taxOffsetPct}% of taxes).
+                </div>
+              )}
             </div>
           </div>
 
@@ -371,12 +519,10 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             onAddPricePoint={handleAddPricePoint}
           />
 
-          {/* Verbatim Description with live keyword highlight */}
+          {/* Skimmable Bulleted Property Notes + Road/Flood Concerns */}
           <div>
-            <h3 style={{ fontSize: 16, marginBottom: 6 }}>Property Description</h3>
-            <p style={{ color: 'var(--ink-2)', fontSize: 15, lineHeight: 1.6 }}>
-              <HighlightedText text={listing.description} query={searchQuery} />
-            </p>
+            <h3 style={{ fontSize: 16, marginBottom: 8 }}>Property Highlights &amp; Notes</h3>
+            <SkimmablePropertyNotes text={listing.description} listing={listing} />
           </div>
 
           {/* Searchable Keyword Tags */}

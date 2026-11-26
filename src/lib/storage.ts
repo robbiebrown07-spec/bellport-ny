@@ -59,11 +59,23 @@ async function writeIdb(state: PersistedAppState): Promise<void> {
 }
 
 export async function fetchSeedListings(): Promise<Listing[]> {
-  const res = await fetch('/data/seed-listings.json', { cache: 'no-cache' });
+  const base = import.meta.env.BASE_URL || '/';
+  const prefix = base.endsWith('/') ? base : `${base}/`;
+  const res = await fetch(`${prefix}data/seed-listings.json`, { cache: 'no-cache' });
   if (!res.ok) {
     throw new Error(`Failed to fetch seed listings (${res.status})`);
   }
-  return (await res.json()) as Listing[];
+  const list = (await res.json()) as Listing[];
+  return list.map((l) => ({
+    ...l,
+    photoUrl:
+      l.photoUrl && !/^(https?:|data:|blob:)/i.test(l.photoUrl)
+        ? `${prefix}${l.photoUrl.replace(/^\//, '')}`
+        : l.photoUrl,
+    photos: l.photos?.map((u) =>
+      !/^(https?:|data:|blob:)/i.test(u) ? `${prefix}${u.replace(/^\//, '')}` : u
+    ),
+  }));
 }
 
 export interface BootstrapPayload {
@@ -78,7 +90,7 @@ export interface BootstrapPayload {
 export async function loadBootstrap(): Promise<BootstrapPayload> {
   try {
     const res = await fetch('/api/bootstrap', { cache: 'no-store' });
-    if (res.ok) {
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const payload = (await res.json()) as BootstrapPayload;
       await writeIdb(payload.state);
       return payload;
@@ -111,19 +123,39 @@ export async function loadBootstrap(): Promise<BootstrapPayload> {
   }
 
   const seedListings = await fetchSeedListings();
-  const prefersDark =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches;
 
   const initial: PersistedAppState = {
     schemaVersion: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     listings: seedListings,
+    emailAlerts: [
+      {
+        id: 'email-alert-default',
+        name: 'Historic Lanes Family Vacation House',
+        email: 'robbiebrown07@gmail.com',
+        frequency: 'immediately',
+        minPrice: null,
+        maxPrice: 2_500_000,
+        minBeds: 3,
+        minBaths: 2,
+        minSqft: null,
+        minLotAcres: null,
+        belowSC: true,
+        beautifulStreetsOnly: false,
+        selectedStreets: [],
+        poolMode: 'pool_or_room',
+        feats: [],
+        naturalQuery: '',
+        notifyOnPriceDrop: true,
+        enabled: true,
+        createdAt: '2026-11-26',
+      },
+    ],
     copyOverrides: {},
     scratchpad:
       'Bellport Village notes:\n• Confirm Incorporated Village boundary for Ho-Hum ferry & Marina pass.\n• Ask Old Purchase Properties about quiet spring off-market gambrels south of Main St.',
     preferences: {
-      theme: prefersDark ? 'dark' : 'light',
+      theme: 'light',
       privacyBlur: false,
       editMode: false,
     },

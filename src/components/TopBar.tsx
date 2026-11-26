@@ -15,6 +15,7 @@ const NAV_ITEMS: Array<{ id: PrimaryView; label: string }> = [
   { id: 'history', label: 'Prices' },
   { id: 'favorites', label: 'Saved' },
   { id: 'alerts', label: 'Alerts' },
+  { id: 'about', label: 'About Bellport' },
 ];
 
 export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpenSettings }) => {
@@ -38,8 +39,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
           >
             <AppMark size={26} />
             <div>
-              <div className="topbar__title">Bellport NY</div>
-              <div className="topbar__subtitle">Search for a beach house</div>
+              <div className="topbar__title">Bellport, NY</div>
+              <div className="topbar__subtitle">Robbie’s search for a family vacation house</div>
             </div>
           </button>
 

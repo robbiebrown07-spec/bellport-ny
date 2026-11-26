@@ -4,6 +4,12 @@ import type {
   StreetAlertRule,
 } from '../types';
 
+export interface ValuationBreakdownRow {
+  label: string;
+  detail: string;
+  amountText: string;
+}
+
 export interface DealEvaluation {
   score: number; // 0-100
   tier: 'Strong Value' | 'Fair Ask' | 'Full Premium' | 'Overpriced';
@@ -15,6 +21,9 @@ export interface DealEvaluation {
   estimatedFairPrice: number;
   deltaPct: number;
   reasons: string[];
+  argumentHeadline: string;
+  argumentSummary: string;
+  breakdown: ValuationBreakdownRow[];
 }
 
 export interface AirbnbEvaluation {
@@ -109,85 +118,184 @@ export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): Dea
   const text = `${listing.description} ${listing.features.join(' ')}`.toLowerCase();
   const lat = listing.latitude ?? 40.758;
   const reasons: string[] = [];
+  const breakdown: ValuationBreakdownRow[] = [];
+
+  const fmtSignedK = (v: number): string => {
+    const sign = v >= 0 ? '+' : '-';
+    const abs = Math.abs(Math.round(v));
+    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+    return `${sign}$${Math.round(abs / 1000)}k`;
+  };
 
   // Incorporated Bellport Village lane-tier land floor + marginal interior $/sq ft
   let landBase = 345_000;
   let marginalPpsf = 245;
+  let laneTierLabel = 'North-Village Residential Lane';
   if (
-    /bellport\s+ln|browns\s+ln|otis|s\s+country|s\s+howells|brookside|oak\s+meadow/.test(addrL) ||
+    /bellport\s+ln|browns\s+ln|livingston|hulse|rogers|bell\s+st|academy|shore|thorn|otis|s\s+country|s\s+howells|brookside|oak\s+meadow/.test(
+      addrL
+    ) ||
     (lat < 40.7555 && !/n\s+howells/.test(addrL))
   ) {
     landBase = 560_000;
     marginalPpsf = 470;
+    laneTierLabel = 'South-of-Main / Historic & Estate Lanes';
     reasons.push('South-of-Main / estate lane benchmark');
-  } else if (/third\s+st|2nd\s+st|country\s+club|n\s+howells|station\s+rd/.test(addrL)) {
+  } else if (/third\s+st|2nd\s+st|country\s+club|n\s+howells|station\s+rd|bieselin|circuit/.test(addrL)) {
     landBase = 430_000;
     marginalPpsf = 315;
+    laneTierLabel = 'Mid-Village & Country Club Corridor';
     reasons.push('Mid-Village & Country Club lane benchmark');
   } else {
     reasons.push('North-Village residential lane benchmark');
   }
 
-  let fairValue = landBase + effectiveSqft * marginalPpsf;
+  breakdown.push({
+    label: 'Location Land Floor',
+    detail: laneTierLabel,
+    amountText: `$${Math.round(landBase / 1000)}k`,
+  });
+
+  const structureVal = effectiveSqft * marginalPpsf;
+  breakdown.push({
+    label: 'Interior Living Area',
+    detail: `${effectiveSqft.toLocaleString()} ft² × $${marginalPpsf}/ft² lane benchmark`,
+    amountText: fmtSignedK(structureVal),
+  });
+
+  let fairValue = landBase + structureVal;
 
   // Bathroom count adjustment relative to 2.0-bath norm
   const bathAdj = Math.max(-75_000, Math.min(180_000, (listing.baths - 2.0) * 55_000));
   fairValue += bathAdj;
+  if (Math.abs(bathAdj) >= 10_000) {
+    breakdown.push({
+      label: 'Bathroom Count',
+      detail: `${listing.baths} baths vs. 2.0-bath Village baseline`,
+      amountText: fmtSignedK(bathAdj),
+    });
+  }
 
   // Lot acreage adjustment relative to 0.30-acre Village parcel
   const acreAdj = Math.max(-45_000, Math.min(850_000, (listing.lotAcres - 0.3) * 520_000));
   fairValue += acreAdj;
+  if (Math.abs(acreAdj) >= 10_000) {
+    breakdown.push({
+      label: 'Lot Acreage',
+      detail: `${listing.lotAcres} ac vs. 0.30-acre Village baseline`,
+      amountText: fmtSignedK(acreAdj),
+    });
+  }
   if (listing.lotAcres >= 0.6) {
     reasons.push(`${listing.lotAcres}-acre Village parcel premium`);
   }
 
   // Waterfront / private creek dock & historic Bellport Ln scarcity
-  if (/private\s+dock|howells\s+creek|waterfront\s+acre|bulkhead/.test(text)) {
+  if (/private\s+dock|howells\s+creek|waterfront\s+acre|bulkhead/.test(text) || listing.features.includes('Waterfront')) {
     fairValue += 520_000;
     reasons.push('Waterfront frontage & private dock scarcity');
+    breakdown.push({
+      label: 'Waterfront Scarcity',
+      detail: 'Bayfront / creek frontage or private bulkhead',
+      amountText: '+$520k',
+    });
   }
   if (/bellport\s+ln/.test(addrL)) {
     fairValue += 420_000;
     reasons.push('Prime Historic District Bellport Lane pedigree');
+    breakdown.push({
+      label: 'Bellport Lane Pedigree',
+      detail: 'National Register Historic District scarcity premium',
+      amountText: '+$420k',
+    });
   }
 
   // Pool & detached guest quarters
   const hasPool =
     /gunite\s+pool|in-ground\s+pool|in\s+ground\s+pool|swimming\s+pool|heated\s+pool|large\s+pool/.test(
       text
-    ) || listing.features.some((f) => f === 'pool' || f.includes('gunite pool'));
+    ) ||
+    listing.features.some(
+      (f) => f === 'pool' || f.toLowerCase() === 'current pool' || f.includes('gunite pool')
+    );
   if (hasPool) {
     fairValue += 165_000;
     reasons.push('In-ground pool (+$165k Village comp value)');
+    breakdown.push({
+      label: 'In-Ground Pool',
+      detail: 'Existing pool installation & peak-summer rental lift',
+      amountText: '+$165k',
+    });
   }
 
-  if (/separate\s+living\s+quarters|separate\s+cedar-clad\s+building|outbuilding\/barn/.test(text)) {
+  if (
+    /separate\s+living\s+quarters|separate\s+cedar-clad\s+building|outbuilding\/barn/.test(text) ||
+    listing.features.some((f) => f.toLowerCase().includes('additional structure'))
+  ) {
     fairValue += 85_000;
     reasons.push('Detached studio / guest quarters');
+    breakdown.push({
+      label: 'Detached Guest / Studio',
+      detail: 'Secondary carriage house, pool house, or studio structure',
+      amountText: '+$85k',
+    });
   }
 
   // Era & condition
   if (listing.yearBuilt >= 2020) {
+    const delta = fairValue * 0.1;
     fairValue *= 1.1;
     reasons.push(`Recent ${listing.yearBuilt} construction`);
+    breakdown.push({
+      label: 'New Construction Premium',
+      detail: `Built ${listing.yearBuilt} (+10% modern systems & code)`,
+      amountText: fmtSignedK(delta),
+    });
   } else if (/renovated|brand-new\s+chef|soapstone|pristine|turnkey/.test(text)) {
+    const delta = fairValue * 0.04;
     fairValue *= 1.04;
     reasons.push('Updated finishes & mechanicals');
+    breakdown.push({
+      label: 'Turnkey Renovation',
+      detail: 'Updated kitchen, baths & mechanicals (+4%)',
+      amountText: fmtSignedK(delta),
+    });
   } else if (/needs\s+some\s+tlc|fixer/.test(text)) {
+    const delta = -fairValue * 0.22;
     fairValue *= 0.78;
     reasons.push('Needs renovation capex');
+    breakdown.push({
+      label: 'Renovation Capex Discount',
+      detail: 'Allowance for interior/mechanical modernization (-22%)',
+      amountText: fmtSignedK(delta),
+    });
   }
 
   if (listing.marketStatus === 'sold') {
-    const soldYr = Number((listing.listedDate || '2024').slice(0, 4));
-    const yrFactor: Record<number, number> = {
-      2021: 0.52,
-      2022: 0.68,
-      2023: 0.84,
-      2024: 0.94,
-      2025: 0.97,
-    };
-    fairValue *= yrFactor[soldYr] ?? 1.0;
+    const soldYr = Number((listing.soldDate ?? listing.listedDate ?? '2024').slice(0, 4));
+    let factor = 1.0;
+    if (soldYr <= 1996) factor = 0.18;
+    else if (soldYr <= 2000) factor = 0.24;
+    else if (soldYr <= 2003) factor = 0.32;
+    else if (soldYr <= 2007) factor = 0.44;
+    else if (soldYr <= 2012) factor = 0.38;
+    else if (soldYr <= 2016) factor = 0.43;
+    else if (soldYr <= 2019) factor = 0.48;
+    else if (soldYr === 2020) factor = 0.52;
+    else if (soldYr === 2021) factor = 0.58;
+    else if (soldYr === 2022) factor = 0.68;
+    else if (soldYr === 2023) factor = 0.84;
+    else if (soldYr === 2024) factor = 0.94;
+    else if (soldYr === 2025) factor = 0.97;
+    if (factor !== 1.0) {
+      const before = fairValue;
+      fairValue *= factor;
+      breakdown.push({
+        label: `${soldYr} Market Era Index`,
+        detail: `Historical Bellport Village price level in ${soldYr} (${Math.round(factor * 100)}% of 2026)`,
+        amountText: fmtSignedK(fairValue - before),
+      });
+    }
   }
 
   const estimatedFairPrice = Math.round(fairValue / 5000) * 5000;
@@ -202,16 +310,27 @@ export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): Dea
   let tone: DealEvaluation['tone'] = 'blue';
   let tier: DealEvaluation['tier'] = 'Fair Ask';
 
+  const askPpsf = Math.round(listing.price / effectiveSqft);
+  const fairPpsf = Math.round(estimatedFairPrice / effectiveSqft);
+  const priceLabel = listing.marketStatus === 'sold' ? 'closed sale price' : listing.marketStatus === 'active' ? 'asking price' : 'estimated market value';
+
+  let argumentHeadline = `Aligned with our $${estimatedFairPrice.toLocaleString()} Bellport Village comp model.`;
+  let argumentSummary = `At $${listing.price.toLocaleString()} ($${askPpsf}/ft²), this ${effectiveSqft.toLocaleString()} ft² home on ${listing.lotAcres} acres sits right in line with our $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) benchmark for ${laneTierLabel}.`;
+
   if (diffDollar <= -15_000) {
     status = 'underpriced';
     badgeLabel = `Underpriced by ${amtText} (${diffPct}%)`;
     tone = 'green';
     tier = 'Strong Value';
+    argumentHeadline = `${amtText} (${Math.abs(diffPct)}%) below our $${estimatedFairPrice.toLocaleString()} Village comp benchmark.`;
+    argumentSummary = `Why we rate this underpriced: its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) trades meaningfully below the $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) warranted by ${laneTierLabel} land values, ${effectiveSqft.toLocaleString()} ft² of interior space, ${listing.lotAcres} acres${hasPool ? ', and an in-ground pool' : ''}. Buyers are effectively acquiring the structure and land at a ${Math.abs(diffPct)}% discount to comparable Incorporated Bellport Village closings.`;
   } else if (diffDollar >= 15_000) {
     status = 'overpriced';
     badgeLabel = `Overpriced by ${amtText} (+${diffPct}%)`;
     tone = diffPct >= 12 ? 'red' : 'yellow';
     tier = diffPct >= 12 ? 'Overpriced' : 'Full Premium';
+    argumentHeadline = `${amtText} (+${diffPct}%) above our $${estimatedFairPrice.toLocaleString()} Village comp benchmark.`;
+    argumentSummary = `Why we rate this overpriced: its $${listing.price.toLocaleString()} ${priceLabel} ($${askPpsf}/ft²) asks a +${diffPct}% premium over our $${estimatedFairPrice.toLocaleString()} ($${fairPpsf}/ft²) comp benchmark for ${laneTierLabel} given ${effectiveSqft.toLocaleString()} ft² on ${listing.lotAcres} acres${hasPool ? ' with pool' : ' without an existing pool'}. Unless there is bespoke architectural pedigree or private bayfrontage beyond public specs, comparable Village homes trade closer to $${estimatedFairPrice.toLocaleString()}.`;
   }
 
   const score = Math.max(22, Math.min(97, Math.round(70 - deltaPct * 1.2)));
@@ -227,6 +346,9 @@ export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): Dea
     estimatedFairPrice,
     deltaPct,
     reasons: reasons.slice(0, 4),
+    argumentHeadline,
+    argumentSummary,
+    breakdown,
   };
 }
 

@@ -5,22 +5,40 @@ interface AppMarkProps {
   size?: number;
 }
 
-export const AppMark: React.FC<AppMarkProps> = ({ size = 26 }) => (
+export const AppMark: React.FC<AppMarkProps> = ({ size = 28 }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 28 28"
+    fill="none"
     aria-hidden="true"
     style={{ flexShrink: 0 }}
   >
-    {/* Red geometric gable */}
-    <path d="M4 12.5 L12.5 4 L21 12.5 Z" fill="var(--g-red)" />
-    {/* Yellow coastal sun */}
-    <circle cx="22.5" cy="6.5" r="3.2" fill="var(--g-yellow)" />
-    {/* Blue architectural block */}
-    <rect x="5.5" y="14" width="14" height="6.5" rx="2" fill="var(--g-blue)" />
-    {/* Green Bellport Bay shoreline pill */}
-    <rect x="3" y="22" width="22" height="3.5" rx="1.75" fill="var(--g-green)" />
+    {/* Single-color Red (#ea4335) beach house (pitched roof + cottage body + window cutout) */}
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M9.5 4.2L2.2 10.6H4.2V19.2H14.8V10.6H16.8L9.5 4.2ZM7.7 11.8H11.3V15.2H7.7V11.8Z"
+      fill="#ea4335"
+    />
+    {/* Warm Yellow (#fbbc04) sandy beach curving beneath the house */}
+    <path
+      d="M1.8 20.6C5.6 18.8 11.4 18.9 16.4 21.4C13.6 23.3 6.2 23.6 1.8 22.4V20.6Z"
+      fill="#fbbc04"
+    />
+    {/* Crisp Blue (#4285f4) ocean waves rolling beside the sand */}
+    <path
+      d="M15.2 17.6C17.1 16.2 19.2 16.2 21.0 17.6C22.6 18.8 24.4 18.8 26.2 17.5"
+      stroke="#4285f4"
+      strokeWidth="2.3"
+      strokeLinecap="round"
+    />
+    <path
+      d="M14.0 22.2C16.2 20.7 18.6 20.7 20.6 22.2C22.5 23.5 24.5 23.5 26.4 22.0"
+      stroke="#4285f4"
+      strokeWidth="2.3"
+      strokeLinecap="round"
+    />
   </svg>
 );
 

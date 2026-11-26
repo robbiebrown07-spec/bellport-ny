@@ -6,6 +6,12 @@ import type {
   VillageParcel,
 } from '../types';
 import { evaluateGoodDeal } from './intelligence';
+import { parseNaturalLanguageQuery } from './nlSearch';
+import {
+  evaluateArchitecturalBeauty,
+  getOwnerAndAirbnbProfile,
+} from './ownerAndAirbnb';
+import { evaluateRobbieFit } from './robbieFit';
 
 export const CURRENT_VILLAGE_YEAR = 2026;
 
@@ -18,6 +24,7 @@ export interface UnifiedFilters {
   allPastSales: boolean;
   allHomes: boolean;
   valuation: '' | 'underpriced' | 'overpriced';
+  robbieFit: '' | 'perfect' | 'great_plus' | 'good_plus';
   minPrice: number | null;
   maxPrice: number | null;
   minBeds: number | null;
@@ -29,9 +36,12 @@ export interface UnifiedFilters {
   minLot: number | null;
   maxLot: number | null;
   belowSC: boolean;
+  beautifulStreetsOnly: boolean;
+  beautifulStreets: string[];
   areas: string[];
   feats: string[];
   q: string;
+  nlQuery: string;
 }
 
 export const INITIAL_UNIFIED_FILTERS: UnifiedFilters = {
@@ -43,6 +53,7 @@ export const INITIAL_UNIFIED_FILTERS: UnifiedFilters = {
   allPastSales: false,
   allHomes: false,
   valuation: '',
+  robbieFit: '',
   minPrice: null,
   maxPrice: null,
   minBeds: null,
@@ -54,10 +65,56 @@ export const INITIAL_UNIFIED_FILTERS: UnifiedFilters = {
   minLot: null,
   maxLot: null,
   belowSC: false,
+  beautifulStreetsOnly: false,
+  beautifulStreets: [],
   areas: [],
   feats: [],
   q: '',
+  nlQuery: '',
 };
+
+export const BEAUTIFUL_STREET_OPTIONS = [
+  {
+    id: 'bellport-lane',
+    label: 'Bellport Lane',
+    sub: 'Main St south to Marina · Historic District',
+  },
+  {
+    id: 'browns-lane',
+    label: 'Browns Lane',
+    sub: 'Shaded Shingle-Style canopy south of Main St',
+  },
+  {
+    id: 'bell-hulse-pocket',
+    label: 'Bell St & Hulse St Pocket',
+    sub: 'Intimate historic cross-lanes off Bellport & Browns',
+  },
+  {
+    id: 'livingston-rogers',
+    label: 'Livingston Rd & Rogers Ave',
+    sub: 'Leafy lower historic lanes near the Marina',
+  },
+  {
+    id: 'academy-gerard',
+    label: 'Academy Lane & Gerard St',
+    sub: 'Sycamore corridor parallel to Livingston & Bellport Ln',
+  },
+  {
+    id: 'shore-thornhedge-bay',
+    label: 'Shore Rd, Pearl & Thornhedge Bluff',
+    sub: 'Great South Bay waterfront & coastal bluff lanes',
+  },
+  {
+    id: 'brewster-south',
+    label: 'Brewster Lane (South Section)',
+    sub: 'Best section only · Strictly south of Main St',
+  },
+  {
+    id: 'south-howells-lower',
+    label: 'S. Howells Point Rd (Lower Estate)',
+    sub: 'Best section only · Country Club to Bay',
+  },
+] as const;
 
 export const MECE_VILLAGE_AREAS = [
   { value: 'Historic Lanes', label: 'Historic Lanes', sub: 'Below S Country · East/Center' },
@@ -67,8 +124,8 @@ export const MECE_VILLAGE_AREAS = [
 ] as const;
 
 export const DESIGN_FEATURE_OPTIONS = [
-  { value: 'pool', label: 'Pool', group: 'Grounds & Water' },
-  { value: 'space_pool', label: 'Space for a pool', group: 'Grounds & Water' },
+  { value: 'pool', label: 'Current pool', group: 'Grounds & Water' },
+  { value: 'space_pool', label: 'Room for a pool', group: 'Grounds & Water' },
   { value: 'lawn', label: 'Beautiful lawn', group: 'Grounds & Water' },
   { value: 'waterfront', label: 'Waterfront', group: 'Grounds & Water' },
   { value: 'shingles', label: 'Shingles', group: 'Architecture & Spaces' },
@@ -83,12 +140,15 @@ export const DESIGN_FEATURE_OPTIONS = [
   },
 ] as const;
 
-export const DESIGN_FEATURE_LABELS: Record<string, string> = Object.fromEntries(
-  DESIGN_FEATURE_OPTIONS.map((f) => [
-    f.value,
-    f.label.replace(' (ADU, studio, pool house)', ''),
-  ])
-);
+export const DESIGN_FEATURE_LABELS: Record<string, string> = {
+  ...Object.fromEntries(
+    DESIGN_FEATURE_OPTIONS.map((f) => [
+      f.value,
+      f.label.replace(' (ADU, studio, pool house)', ''),
+    ])
+  ),
+  beautiful_street: 'Beautiful street',
+};
 
 export function parseFlexibleNumber(raw: string): number | null {
   const s = raw.trim().toLowerCase().replace(/[$,\s]/g, '');
@@ -114,6 +174,13 @@ export function fmtShortDollar(n: number): string {
   return `$${n}`;
 }
 
+export function resolveAssetUrl(raw?: string | null): string | undefined {
+  if (!raw) return undefined;
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw;
+  const base = import.meta.env.BASE_URL || '/';
+  return `${base.endsWith('/') ? base : `${base}/`}${raw.replace(/^\//, '')}`;
+}
+
 export function isAnyUnifiedFilterActive(f: UnifiedFilters): boolean {
   return (
     f.forSale ||
@@ -122,6 +189,7 @@ export function isAnyUnifiedFilterActive(f: UnifiedFilters): boolean {
     f.allPastSales ||
     f.allHomes ||
     Boolean(f.valuation) ||
+    Boolean(f.robbieFit) ||
     f.minPrice !== null ||
     f.maxPrice !== null ||
     f.minBeds !== null ||
@@ -133,9 +201,12 @@ export function isAnyUnifiedFilterActive(f: UnifiedFilters): boolean {
     f.minLot !== null ||
     f.maxLot !== null ||
     f.belowSC ||
+    f.beautifulStreetsOnly ||
+    f.beautifulStreets.length > 0 ||
     f.areas.length > 0 ||
     f.feats.length > 0 ||
-    f.q.trim() !== ''
+    f.q.trim() !== '' ||
+    f.nlQuery.trim() !== ''
   );
 }
 
@@ -150,6 +221,36 @@ function tokenizeQuery(q: string): string[] {
   return out;
 }
 
+// Commercial District Stores (Bellport General, Copper Beech, Brewport, Apothecary on Main St):
+export const COMMERCIAL_STORES_COORD = { lat: 40.7575, lon: -72.9390 };
+// Bellport Town Marina & Whalehouse Point Ferry Dock (Foot of Bellport Lane):
+export const TOWN_MARINA_COORD = { lat: 40.7518, lon: -72.9337 };
+
+export function getVillageDistances(lat?: number, lon?: number): {
+  distStoresMi: number;
+  walkStoresMin: number;
+  distMarinaMi: number;
+  walkMarinaMin: number;
+} {
+  const la = lat ?? 40.7575;
+  const lo = lon ?? -72.9390;
+  const storesMiles = Math.max(
+    0.05,
+    Math.hypot((la - COMMERCIAL_STORES_COORD.lat) * 69.0, (lo - COMMERCIAL_STORES_COORD.lon) * 52.3) *
+      1.24
+  );
+  const marinaMiles = Math.max(
+    0.05,
+    Math.hypot((la - TOWN_MARINA_COORD.lat) * 69.0, (lo - TOWN_MARINA_COORD.lon) * 52.3) * 1.24
+  );
+  return {
+    distStoresMi: Number(storesMiles.toFixed(2)),
+    walkStoresMin: Math.max(1, Math.round(storesMiles * 20)),
+    distMarinaMi: Number(marinaMiles.toFixed(2)),
+    walkMarinaMin: Math.max(1, Math.round(marinaMiles * 20)),
+  };
+}
+
 export interface UnifiedHome {
   uid: string;
   parcelId: string;
@@ -157,6 +258,14 @@ export interface UnifiedHome {
   address: string;
   area: BellportMicroArea;
   belowSC: boolean;
+  beautifulStreet: boolean;
+  beautifulStreetId: string | null;
+  beautifulStreetName: string | null;
+  walkMin: number;
+  distStoresMi: number;
+  walkStoresMin: number;
+  distMarinaMi: number;
+  walkMarinaMin: number;
   isForSale: boolean;
   hasPastSale: boolean;
   soldDate: string | null;
@@ -173,6 +282,9 @@ export interface UnifiedHome {
   styleSummary: string;
   description: string;
   feats: string[];
+  extColor: string;
+  openLawnAc: number;
+  traits: string[];
   photos: string[];
   photoUrl?: string;
   photoSource?: 'mls' | 'streetview' | 'aerial';
@@ -206,7 +318,7 @@ export function buildUnifiedVillageCatalog(
     const linked = p.listingId ? (listingsById.get(p.listingId) ?? null) : null;
     const saleRec = salesByPid.get(p.id) ?? null;
     const soldDate =
-      (linked?.marketStatus === 'sold' ? linked.listedDate : null) ??
+      (linked?.marketStatus === 'sold' ? (linked.soldDate ?? linked.listedDate) : null) ??
       p.soldDate ??
       saleRec?.date ??
       null;
@@ -224,6 +336,13 @@ export function buildUnifiedVillageCatalog(
         ? soldPrice
         : (p.val ?? 950_000);
 
+    const dists = getVillageDistances(p.lat, p.lon);
+    const sqftVal = linked?.sqft ?? p.sqft ?? 1800;
+    const lotAcVal = linked?.lotAcres ?? p.acres;
+    const fallbackLawn = Number(
+      Math.max(0.04, lotAcVal - ((p.fpSqft || sqftVal * 0.62) / 43560)).toFixed(2)
+    );
+
     catalog.push({
       uid: linked?.id ?? p.id,
       parcelId: p.id,
@@ -231,6 +350,14 @@ export function buildUnifiedVillageCatalog(
       address: linked?.address ?? p.addr,
       area: p.area,
       belowSC: Boolean(p.belowSC),
+      beautifulStreet: Boolean(p.beautifulStreet),
+      beautifulStreetId: p.beautifulStreetId ?? null,
+      beautifulStreetName: p.beautifulStreetName ?? null,
+      walkMin: dists.walkMarinaMin,
+      distStoresMi: dists.distStoresMi,
+      walkStoresMin: dists.walkStoresMin,
+      distMarinaMi: dists.distMarinaMi,
+      walkMarinaMin: dists.walkMarinaMin,
       isForSale,
       hasPastSale,
       soldDate,
@@ -240,24 +367,32 @@ export function buildUnifiedVillageCatalog(
       estVal: p.val ?? displayPrice,
       beds: linked?.beds ?? p.beds ?? 3,
       baths: linked?.baths ?? p.baths ?? 2,
-      sqft: linked?.sqft ?? p.sqft ?? 1800,
-      lotAcres: linked?.lotAcres ?? p.acres,
+      sqft: sqftVal,
+      lotAcres: lotAcVal,
       yearBuilt: linked?.yearBuilt ?? p.yr ?? 1955,
       style: linked?.style ?? p.style ?? 'Bellport Village Home',
       styleSummary: linked?.styleSummary ?? linked?.headline ?? p.styleSummary ?? '',
       description: linked?.description ?? p.pastRemarks ?? p.styleSummary ?? '',
       feats: p.feats ?? [],
-      photos: linked?.photos?.length
-        ? linked.photos
-        : linked?.photoUrl
-          ? [linked.photoUrl]
-          : p.mlsPhotoUrls?.length
-            ? p.mlsPhotoUrls
-            : p.photoUrl
-              ? [p.photoUrl]
-              : [],
-      photoUrl:
-        linked?.photos?.[0] ?? linked?.photoUrl ?? p.photoUrl ?? p.mlsPhotoUrls?.[0],
+      extColor: p.extColor ?? 'cedar',
+      openLawnAc: p.openLawnAc ?? fallbackLawn,
+      traits: p.traits ?? [],
+      photos: (
+        linked?.photos?.length
+          ? linked.photos
+          : linked?.photoUrl
+            ? [linked.photoUrl]
+            : p.mlsPhotoUrls?.length
+              ? p.mlsPhotoUrls
+              : p.photoUrl
+                ? [p.photoUrl]
+                : []
+      )
+        .map((u) => resolveAssetUrl(u))
+        .filter((u): u is string => Boolean(u)),
+      photoUrl: resolveAssetUrl(
+        linked?.photos?.[0] ?? linked?.photoUrl ?? p.photoUrl ?? p.mlsPhotoUrls?.[0]
+      ),
       photoSource:
         linked?.photos?.length || linked?.photoUrl
           ? 'mls'
@@ -299,7 +434,12 @@ export function toPseudoListing(h: UnifiedHome): Listing {
     lotAcres: h.lotAcres,
     yearBuilt: h.yearBuilt,
     annualTaxes: Math.round(h.estVal * 0.009),
-    floodZone: 'X',
+    floodZone:
+      h.parcelRef.waterfront && h.lat < 40.7435
+        ? 'VE'
+        : h.lat < 40.748 || h.parcelRef.waterfront
+          ? 'AE'
+          : 'X',
     daysOnMarket: 0,
     listedDate: h.soldDate ?? '2026-01-01',
     style: h.style,
@@ -321,6 +461,8 @@ export function homeMatchesUnifiedFilters(
   filters: UnifiedFilters,
   isDirectoryMode: boolean
 ): boolean {
+  const nl = filters.nlQuery.trim() ? parseNaturalLanguageQuery(filters.nlQuery) : null;
+
   const anyStatus =
     filters.forSale ||
     filters.soldRecent ||
@@ -344,6 +486,14 @@ export function homeMatchesUnifiedFilters(
       ok = true;
     }
     if (!ok) return false;
+  } else if (nl?.statusIntent) {
+    if (nl.statusIntent === 'for_sale' && !h.isForSale) return false;
+    if (nl.statusIntent === 'past_sales') {
+      if (!h.hasPastSale) return false;
+      if (nl.soldYears && (!h.soldYear || h.soldYear < CURRENT_VILLAGE_YEAR - nl.soldYears)) {
+        return false;
+      }
+    }
   } else if (isDirectoryMode) {
     const anyNarrowing =
       Boolean(filters.valuation) ||
@@ -358,14 +508,19 @@ export function homeMatchesUnifiedFilters(
       filters.minLot !== null ||
       filters.maxLot !== null ||
       filters.belowSC ||
+      filters.beautifulStreetsOnly ||
+      filters.beautifulStreets.length > 0 ||
       filters.areas.length > 0 ||
       filters.feats.length > 0 ||
-      filters.q.trim() !== '';
+      filters.q.trim() !== '' ||
+      Boolean(nl?.active);
     if (!anyNarrowing && !h.isForSale) return false;
   }
 
-  if (filters.minPrice !== null && h.price < filters.minPrice) return false;
-  if (filters.maxPrice !== null && h.price > filters.maxPrice) return false;
+  // Price (use estVal when comparing off-market/old past sales unless past_sales explicitly requested)
+  const cmpPrice = h.isForSale ? h.price : filters.allPastSales || nl?.statusIntent === 'past_sales' ? h.price : h.estVal;
+  if (filters.minPrice !== null && cmpPrice < filters.minPrice) return false;
+  if (filters.maxPrice !== null && cmpPrice > filters.maxPrice) return false;
   if (filters.minBeds !== null && h.beds < filters.minBeds) return false;
   if (filters.maxBeds !== null && h.beds > filters.maxBeds) return false;
   if (filters.minBaths !== null && h.baths < filters.minBaths) return false;
@@ -375,10 +530,35 @@ export function homeMatchesUnifiedFilters(
   if (filters.minLot !== null && h.lotAcres < filters.minLot) return false;
   if (filters.maxLot !== null && h.lotAcres > filters.maxLot) return false;
   if (filters.belowSC && !h.belowSC) return false;
+
+  // Beautiful streets filter
+  if (filters.beautifulStreets.length > 0) {
+    if (!h.beautifulStreetId || !filters.beautifulStreets.includes(h.beautifulStreetId)) {
+      return false;
+    }
+  } else if (filters.beautifulStreetsOnly && !h.beautifulStreet) {
+    return false;
+  }
+
   if (filters.areas.length > 0 && !filters.areas.includes(h.area)) return false;
 
+  // Features with smart Pool OR-logic:
+  // - 'pool' + 'space_pool' together -> EITHER current pool OR room for pool!
+  // - 'pool' alone -> ONLY homes with a current pool!
+  // - 'space_pool' alone -> homes with room for a pool!
   if (filters.feats.length > 0) {
+    const wantsPool = filters.feats.includes('pool');
+    const wantsSpacePool = filters.feats.includes('space_pool');
+    if (wantsPool && wantsSpacePool) {
+      if (!h.feats.includes('pool') && !h.feats.includes('space_pool')) return false;
+    } else if (wantsPool) {
+      if (!h.feats.includes('pool')) return false;
+    } else if (wantsSpacePool) {
+      if (!h.feats.includes('space_pool')) return false;
+    }
+
     for (const fk of filters.feats) {
+      if (fk === 'pool' || fk === 'space_pool') continue;
       if (!h.feats.includes(fk)) return false;
     }
   }
@@ -388,11 +568,20 @@ export function homeMatchesUnifiedFilters(
     if (deal.status !== filters.valuation) return false;
   }
 
+  const wantedFit = filters.robbieFit || nl?.robbieFit || '';
+  if (wantedFit) {
+    const fit = evaluateRobbieFit(toPseudoListing(h));
+    if (wantedFit === 'perfect' && fit.tier !== 'perfect') return false;
+    if (wantedFit === 'great_plus' && fit.tier !== 'perfect' && fit.tier !== 'great') return false;
+    if (wantedFit === 'good_plus' && !fit.tier) return false;
+  }
+
   if (filters.q.trim()) {
     const tokens = tokenizeQuery(filters.q);
     const hay = [
       h.address,
       h.area,
+      h.beautifulStreetName ?? '',
       h.style,
       h.styleSummary,
       h.description,
@@ -403,6 +592,125 @@ export function homeMatchesUnifiedFilters(
       .join(' ')
       .toLowerCase();
     if (!tokens.every((t: string) => hay.includes(t))) return false;
+  }
+
+  // Natural Language Search evaluation (structured + visual/photo + GIS spatial + synonym-expanded)
+  if (nl?.active) {
+    if (nl.minPrice !== null && cmpPrice < nl.minPrice) return false;
+    if (nl.maxPrice !== null && cmpPrice > nl.maxPrice) return false;
+    if (nl.minBeds !== null && h.beds < nl.minBeds) return false;
+    if (nl.maxBeds !== null && h.beds > nl.maxBeds) return false;
+    if (nl.minBaths !== null && h.baths < nl.minBaths) return false;
+    if (nl.minSqft !== null && h.sqft < nl.minSqft) return false;
+    if (nl.minLot !== null && h.lotAcres < nl.minLot) return false;
+    if (nl.maxWalkMin !== null && h.walkMin > nl.maxWalkMin) return false;
+    if (nl.maxWalkStoresMin !== null && h.walkStoresMin > nl.maxWalkStoresMin) return false;
+    if (nl.belowSC && !h.belowSC) return false;
+    if (nl.beautifulStreetsOnly && !h.beautifulStreet) return false;
+    if (nl.maxYearBuilt !== null && h.yearBuilt > nl.maxYearBuilt) return false;
+    if (nl.minYearBuilt !== null && h.yearBuilt < nl.minYearBuilt) return false;
+
+    if (nl.extColors.length > 0) {
+      if (!nl.extColors.includes(h.extColor)) return false;
+    }
+
+    for (const tr of nl.requiredTraits) {
+      if (tr === 'large_lawn') {
+        if (!h.traits.includes('large_lawn') && h.openLawnAc < 0.34 && !h.feats.includes('lawn')) {
+          return false;
+        }
+      } else if (!h.traits.includes(tr)) {
+        return false;
+      }
+    }
+
+    if (nl.airbnbOnly) {
+      const prof = getOwnerAndAirbnbProfile({
+        parcelId: h.parcelId,
+        owner: h.owner,
+        mail: h.mail,
+        absentee: h.parcelRef.absentee,
+        listing: toPseudoListing(h),
+      });
+      if (!prof.isListedOnAirbnb) return false;
+    }
+
+    if (nl.minBeauty !== null) {
+      const b = evaluateArchitecturalBeauty(toPseudoListing(h));
+      if (b.score10 < nl.minBeauty) return false;
+    }
+
+    if (nl.streetMentions.length > 0) {
+      const addrLow = h.address
+        .toLowerCase()
+        .replace(/\broad\b/g, 'rd')
+        .replace(/\blane\b/g, 'ln')
+        .replace(/\bstreet\b/g, 'st')
+        .replace(/\bavenue\b/g, 'ave');
+      if (!nl.streetMentions.some((sm) => addrLow.includes(sm))) return false;
+    }
+
+    if (nl.poolMode === 'pool_or_room') {
+      if (!h.feats.includes('pool') && !h.feats.includes('space_pool')) return false;
+    } else if (nl.poolMode === 'pool_only') {
+      if (!h.feats.includes('pool')) return false;
+    } else if (nl.poolMode === 'room_only') {
+      if (!h.feats.includes('space_pool')) return false;
+    }
+
+    for (const fk of nl.feats) {
+      if (!h.feats.includes(fk)) return false;
+    }
+
+    if (nl.styleTokens.length > 0) {
+      const styleHay = `${h.style} ${h.styleSummary} ${h.description}`.toLowerCase();
+      if (!nl.styleTokens.some((st) => styleHay.includes(st))) return false;
+    }
+
+    if (nl.valuation) {
+      const deal = evaluateGoodDeal(toPseudoListing(h), []);
+      if (deal.status !== nl.valuation) return false;
+    }
+
+    if (nl.residualTokens.length > 0) {
+      const hay = [
+        h.address,
+        h.area,
+        h.beautifulStreetName ?? '',
+        h.style,
+        h.styleSummary,
+        h.description,
+        h.extColor,
+        h.traits.join(' '),
+        h.feats.map((f) => DESIGN_FEATURE_LABELS[f] ?? f).join(' '),
+        h.owner ?? '',
+        h.mail ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .replace(/\broad\b/g, 'rd')
+        .replace(/\blane\b/g, 'ln')
+        .replace(/\bstreet\b/g, 'st')
+        .replace(/\bavenue\b/g, 'ave');
+
+      const synMap: Record<string, string[]> = {
+        modern: ['modern', 'contemporary', '202', 'barn'],
+        beach: ['waterfront', 'bay', 'coastal', 'marina', 'shore'],
+        ocean: ['waterfront', 'bay', 'ho-hum', 'shore'],
+        tennis: ['tennis', 'court', 'estate_grounds'],
+        garage: ['garage', 'addl_struct', 'carriage'],
+        deck: ['deck', 'patio', 'porch', 'bluestone'],
+        patio: ['patio', 'deck', 'bluestone', 'terrace'],
+        fence: ['picket', 'fence', 'hedged', 'privet'],
+        corner: ['wide_lot', 'corner'],
+      };
+
+      const matchesResidual = nl.residualTokens.every((tok) => {
+        const alts = synMap[tok] ?? [tok];
+        return alts.some((alt) => hay.includes(alt));
+      });
+      if (!matchesResidual) return false;
+    }
   }
 
   return true;

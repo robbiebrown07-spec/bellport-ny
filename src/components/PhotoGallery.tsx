@@ -143,7 +143,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
             paddingBottom: 4,
           }}
         >
-          {validPhotos.slice(0, 12).map((thumb, idx) => (
+          {validPhotos.map((thumb, idx) => (
             <button
               key={thumb}
               type="button"

@@ -2,22 +2,26 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Heart, LayoutGrid, List, RotateCcw } from 'lucide-react';
 import { median } from 'd3-array';
 import type {
+  EmailAlertRule,
   FilterState,
   HistoricalSaleRecord,
   Listing,
   PersistedAppState,
   PrimaryView,
-  StreetAlertRule,
   SyncMetadata,
   VillageParcelsBundle,
 } from './types';
 import { fetchSeedListings, loadBootstrap, saveState } from './lib/storage';
 import { evaluateGoodDeal } from './lib/intelligence';
+import { evaluateRobbieFit } from './lib/robbieFit';
+import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
+import { parseNaturalLanguageQuery } from './lib/nlSearch';
 import {
   INITIAL_UNIFIED_FILTERS,
   buildUnifiedVillageCatalog,
   fmtShortDollar,
   homeMatchesUnifiedFilters,
+  resolveAssetUrl,
   toPseudoListing,
   type UnifiedFilters,
 } from './lib/unifiedCatalog';
@@ -29,11 +33,13 @@ import { PropertyDrawer } from './components/PropertyDrawer';
 import { SyncModal } from './components/SyncModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { FavoritesAndTasteView } from './components/FavoritesAndTasteView';
-import { StreetAlertsView } from './components/StreetAlertsView';
+import { EmailAlertsView } from './components/EmailAlertsView';
 import { PriceDropsHistoryView } from './components/PriceDropsHistoryView';
 import { VillageParcelMapView } from './components/VillageParcelMapView';
-import { CornerDock } from './components/CornerDock';
+import { AboutBellportView } from './components/AboutBellportView';
 import { UnifiedFilterBar } from './components/UnifiedFilterBar';
+import { ValuationBadge } from './components/ValuationBadge';
+import { RobbieFitBadge } from './components/RobbieFitBadge';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<PersistedAppState | null>(null);
@@ -43,11 +49,17 @@ export const App: React.FC = () => {
   });
   const [parcelsBundle, setParcelsBundle] = useState<VillageParcelsBundle | null>(null);
   const [salesHistory, setSalesHistory] = useState<HistoricalSaleRecord[]>([]);
-  const [parcelFavorites, setParcelFavorites] = useState<Record<string, boolean>>({});
   const [activeView, setActiveView] = useState<PrimaryView>('map');
   const [unifiedFilters, setUnifiedFilters] = useState<UnifiedFilters>(INITIAL_UNIFIED_FILTERS);
   const [sortBy, setSortBy] = useState<
-    'featured' | 'underpriced' | 'price-asc' | 'price-desc' | 'sqft-desc' | 'acres-desc'
+    | 'featured'
+    | 'robbie-fit'
+    | 'beauty-desc'
+    | 'underpriced'
+    | 'price-asc'
+    | 'price-desc'
+    | 'sqft-desc'
+    | 'acres-desc'
   >('featured');
   const [layout, setLayout] = useState<FilterState['layout']>('grid');
   const [homesLimit, setHomesLimit] = useState(24);
@@ -60,10 +72,12 @@ export const App: React.FC = () => {
     let active = true;
     Promise.all([
       loadBootstrap(),
-      fetch('/data/bellport-parcels.json').then((r) => r.json() as Promise<VillageParcelsBundle>),
-      fetch('/data/bellport-sales-history.json').then(
-        (r) => r.json() as Promise<HistoricalSaleRecord[]>
+      fetch(resolveAssetUrl('/data/bellport-parcels.json') ?? '/data/bellport-parcels.json').then(
+        (r) => r.json() as Promise<VillageParcelsBundle>
       ),
+      fetch(
+        resolveAssetUrl('/data/bellport-sales-history.json') ?? '/data/bellport-sales-history.json'
+      ).then((r) => r.json() as Promise<HistoricalSaleRecord[]>),
     ])
       .then(([payload, pBundle, sHist]) => {
         if (!active) return;
@@ -93,7 +107,7 @@ export const App: React.FC = () => {
     if (!appState) return;
     const timer = window.setTimeout(() => {
       void saveState(appState);
-    }, 260);
+    }, 200);
     return () => window.clearTimeout(timer);
   }, [appState]);
 
@@ -109,7 +123,6 @@ export const App: React.FC = () => {
 
       if (!inEditable && !selectedParcelOrListingId && !syncOpen && !settingsOpen && e.key === '/') {
         e.preventDefault();
-        setActiveView('listings');
         window.setTimeout(() => searchInputRef.current?.focus(), 20);
       }
     };
@@ -124,7 +137,40 @@ export const App: React.FC = () => {
       ),
     [appState]
   );
-  const streetAlerts = useMemo(() => appState?.streetAlerts ?? [], [appState]);
+
+  const savedParcelIds = useMemo<Record<string, boolean>>(
+    () => appState?.savedParcelIds ?? {},
+    [appState?.savedParcelIds]
+  );
+
+  const emailAlerts = useMemo<EmailAlertRule[]>(() => {
+    if (appState?.emailAlerts && appState.emailAlerts.length > 0) {
+      return appState.emailAlerts;
+    }
+    return [
+      {
+        id: 'email-alert-default',
+        name: 'Historic Lanes Family Vacation House',
+        email: 'robbiebrown07@gmail.com',
+        frequency: 'immediately',
+        minPrice: null,
+        maxPrice: 2_500_000,
+        minBeds: 3,
+        minBaths: 2,
+        minSqft: null,
+        minLotAcres: null,
+        belowSC: true,
+        beautifulStreetsOnly: false,
+        selectedStreets: ['bellport-lane', 'browns-lane', 'bell-hulse-pocket', 'livingston-rogers'],
+        poolMode: 'pool_or_room',
+        feats: [],
+        naturalQuery: '',
+        notifyOnPriceDrop: true,
+        enabled: true,
+        createdAt: '2026-11-26',
+      },
+    ];
+  }, [appState?.emailAlerts]);
 
   const catalog = useMemo(
     () =>
@@ -133,10 +179,15 @@ export const App: React.FC = () => {
             parcelsBundle.parcels,
             allListings,
             salesHistory,
-            parcelFavorites
+            savedParcelIds
           )
         : [],
-    [parcelsBundle, allListings, salesHistory, parcelFavorites]
+    [parcelsBundle, allListings, salesHistory, savedParcelIds]
+  );
+
+  const parsedNl = useMemo(
+    () => parseNaturalLanguageQuery(unifiedFilters.nlQuery),
+    [unifiedFilters.nlQuery]
   );
 
   const matchedHomes = useMemo(() => {
@@ -144,8 +195,26 @@ export const App: React.FC = () => {
     list.sort((a, b) => {
       if (sortBy === 'featured') {
         if (a.isForSale !== b.isForSale) return a.isForSale ? -1 : 1;
+        if (parsedNl.sortHint === 'lawn_desc') return b.openLawnAc - a.openLawnAc;
+        if (parsedNl.sortHint === 'beauty_desc') {
+          return (
+            evaluateArchitecturalBeauty(toPseudoListing(b)).score10 -
+            evaluateArchitecturalBeauty(toPseudoListing(a)).score10
+          );
+        }
         if (a.hasPastSale !== b.hasPastSale) return a.hasPastSale ? -1 : 1;
         return b.price - a.price;
+      }
+      if (sortBy === 'robbie-fit') {
+        const fa = evaluateRobbieFit(toPseudoListing(a)).score;
+        const fb = evaluateRobbieFit(toPseudoListing(b)).score;
+        if (fb !== fa) return fb - fa;
+        return a.isForSale === b.isForSale ? 0 : a.isForSale ? -1 : 1;
+      }
+      if (sortBy === 'beauty-desc') {
+        const ba = evaluateArchitecturalBeauty(toPseudoListing(a)).score10;
+        const bb = evaluateArchitecturalBeauty(toPseudoListing(b)).score10;
+        return bb - ba;
       }
       if (sortBy === 'underpriced') {
         const da = evaluateGoodDeal(toPseudoListing(a), allListings).diffPct;
@@ -159,7 +228,7 @@ export const App: React.FC = () => {
       return 0;
     });
     return list;
-  }, [allListings, catalog, sortBy, unifiedFilters]);
+  }, [allListings, catalog, parsedNl.sortHint, sortBy, unifiedFilters]);
 
   const visibleHomes = useMemo(
     () => matchedHomes.slice(0, homesLimit),
@@ -204,8 +273,13 @@ export const App: React.FC = () => {
       if (!prev) return prev;
       const exists = prev.listings.some((item) => item.id === id);
       if (!exists && patch.isFavorite !== undefined) {
-        setParcelFavorites((pf) => ({ ...pf, [id]: Boolean(patch.isFavorite) }));
-        return prev;
+        return {
+          ...prev,
+          savedParcelIds: {
+            ...(prev.savedParcelIds ?? {}),
+            [id]: Boolean(patch.isFavorite),
+          },
+        };
       }
       return {
         ...prev,
@@ -215,20 +289,25 @@ export const App: React.FC = () => {
   };
 
   const toggleHomeFavorite = (parcelId: string, listingId: string | null) => {
-    if (listingId) {
-      setAppState((prev) =>
-        prev
-          ? {
-              ...prev,
-              listings: prev.listings.map((item) =>
-                item.id === listingId ? { ...item, isFavorite: !item.isFavorite } : item
-              ),
-            }
-          : prev
-      );
-    } else {
-      setParcelFavorites((pf) => ({ ...pf, [parcelId]: !pf[parcelId] }));
-    }
+    setAppState((prev) => {
+      if (!prev) return prev;
+      if (listingId && prev.listings.some((item) => item.id === listingId)) {
+        return {
+          ...prev,
+          listings: prev.listings.map((item) =>
+            item.id === listingId ? { ...item, isFavorite: !item.isFavorite } : item
+          ),
+        };
+      }
+      const cur = Boolean((prev.savedParcelIds ?? {})[parcelId]);
+      return {
+        ...prev,
+        savedParcelIds: {
+          ...(prev.savedParcelIds ?? {}),
+          [parcelId]: !cur,
+        },
+      };
+    });
   };
 
   const deleteListing = (id: string) => {
@@ -238,18 +317,18 @@ export const App: React.FC = () => {
     );
   };
 
-  const addStreetAlert = (rule: StreetAlertRule) => {
+  const addEmailAlert = (rule: EmailAlertRule) => {
     setAppState((prev) =>
-      prev ? { ...prev, streetAlerts: [rule, ...(prev.streetAlerts ?? [])] } : prev
+      prev ? { ...prev, emailAlerts: [rule, ...emailAlerts] } : prev
     );
   };
 
-  const toggleStreetAlert = (id: string) => {
+  const toggleEmailAlert = (id: string) => {
     setAppState((prev) =>
       prev
         ? {
             ...prev,
-            streetAlerts: (prev.streetAlerts ?? []).map((r) =>
+            emailAlerts: emailAlerts.map((r) =>
               r.id === id ? { ...r, enabled: !r.enabled } : r
             ),
           }
@@ -257,11 +336,9 @@ export const App: React.FC = () => {
     );
   };
 
-  const deleteStreetAlert = (id: string) => {
+  const deleteEmailAlert = (id: string) => {
     setAppState((prev) =>
-      prev
-        ? { ...prev, streetAlerts: (prev.streetAlerts ?? []).filter((r) => r.id !== id) }
-        : prev
+      prev ? { ...prev, emailAlerts: emailAlerts.filter((r) => r.id !== id) } : prev
     );
   };
 
@@ -277,6 +354,8 @@ export const App: React.FC = () => {
         {activeView === 'map' && (
           <VillageParcelMapView
             listings={allListings}
+            savedParcelIds={savedParcelIds}
+            onToggleFavorite={toggleHomeFavorite}
             unifiedFilters={unifiedFilters}
             onChangeUnifiedFilters={(next) => {
               setUnifiedFilters(next);
@@ -294,7 +373,9 @@ export const App: React.FC = () => {
             aiTasteMemo={appState.aiTasteMemo}
             onOpenListing={(id) => setSelectedParcelOrListingId(id)}
             onToggleFavorite={(id) => {
-              const found = catalog.find((h) => h.parcelId === id || h.listingId === id || h.uid === id);
+              const found = catalog.find(
+                (h) => h.parcelId === id || h.listingId === id || h.uid === id
+              );
               if (found) toggleHomeFavorite(found.parcelId, found.listingId);
               else toggleHomeFavorite(id, id);
             }}
@@ -305,12 +386,13 @@ export const App: React.FC = () => {
         )}
 
         {activeView === 'alerts' && (
-          <StreetAlertsView
-            rules={streetAlerts}
-            listings={allListings}
-            onAddRule={addStreetAlert}
-            onToggleRule={toggleStreetAlert}
-            onDeleteRule={deleteStreetAlert}
+          <EmailAlertsView
+            rules={emailAlerts}
+            catalog={catalog}
+            activeUnifiedFilters={unifiedFilters}
+            onAddRule={addEmailAlert}
+            onToggleRule={toggleEmailAlert}
+            onDeleteRule={deleteEmailAlert}
             onOpenListing={(id) => setSelectedParcelOrListingId(id)}
           />
         )}
@@ -320,6 +402,13 @@ export const App: React.FC = () => {
             listings={allListings}
             privacyBlur={appState.preferences.privacyBlur}
             onOpenListing={(id) => setSelectedParcelOrListingId(id)}
+          />
+        )}
+
+        {activeView === 'about' && (
+          <AboutBellportView
+            pois={parcelsBundle?.pois ?? []}
+            onJumpToMap={() => setActiveView('map')}
           />
         )}
 
@@ -390,7 +479,7 @@ export const App: React.FC = () => {
                         setHomesLimit(36);
                       }}
                     >
-                      <span>All Past Sales</span>
+                      <span>All Past Sales (236)</span>
                     </button>
 
                     <button
@@ -415,13 +504,16 @@ export const App: React.FC = () => {
                       {medianPrice > 0 && (
                         <span className="priv-val">
                           {' '}
-                          · Median <strong style={{ color: 'var(--ink)' }}>{fmtShortDollar(medianPrice)}</strong>
+                          · Median{' '}
+                          <strong style={{ color: 'var(--ink)' }}>
+                            {fmtShortDollar(medianPrice)}
+                          </strong>
                         </span>
                       )}
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <select
                       className="filter-field__select"
                       style={{ height: 34, fontSize: 12.5 }}
@@ -445,6 +537,8 @@ export const App: React.FC = () => {
                       onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                     >
                       <option value="featured">Sort: Featured</option>
+                      <option value="robbie-fit">Best Fit for Robbie</option>
+                      <option value="beauty-desc">Architectural Beauty</option>
                       <option value="underpriced">Most Underpriced</option>
                       <option value="price-asc">Price: Low → High</option>
                       <option value="price-desc">Price: High → Low</option>
@@ -500,10 +594,10 @@ export const App: React.FC = () => {
                   <div className="listing-grid">
                     {visibleHomes.map((h) => {
                       const ppsf = h.sqft > 0 ? Math.round(h.price / h.sqft) : 0;
-                      const deal =
-                        h.isForSale || h.hasPastSale
-                          ? evaluateGoodDeal(toPseudoListing(h), allListings)
-                          : null;
+                      const pseudo = toPseudoListing(h);
+                      const deal = evaluateGoodDeal(pseudo, allListings);
+                      const fit = evaluateRobbieFit(pseudo);
+                      const beauty = evaluateArchitecturalBeauty(pseudo);
 
                       return (
                         <article key={h.parcelId} className="listing-card">
@@ -518,21 +612,23 @@ export const App: React.FC = () => {
                               photoUrl={h.photoUrl}
                             />
                             <div className="listing-card__badges">
-                              {/* Area Tag on top-left (no redundant green Bellport Village tag!) */}
-                              <span
-                                className="badge"
-                                style={{
-                                  background: 'rgba(255,255,255,0.94)',
-                                  color: 'var(--ink)',
-                                }}
-                              >
-                                {h.area}
-                              </span>
+                              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                <RobbieFitBadge listing={pseudo} fit={fit} compact />
+                                <span
+                                  className="badge"
+                                  style={{
+                                    background: 'rgba(255,255,255,0.94)',
+                                    color: 'var(--ink)',
+                                  }}
+                                >
+                                  {h.area}
+                                </span>
+                              </div>
 
                               <button
                                 type="button"
                                 className="status-dot-btn"
-                                aria-label={`Favorite ${h.address}`}
+                                aria-label={`Save ${h.address}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   toggleHomeFavorite(h.parcelId, h.listingId);
@@ -600,56 +696,47 @@ export const App: React.FC = () => {
                                   {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
                                   {h.price.toLocaleString()}
                                 </span>
-                                {deal ? (
-                                  <span
-                                    className="priv-val"
-                                    style={{
-                                      fontSize: 12,
-                                      color: 'var(--ink-2)',
-                                      fontFamily: 'var(--font-mono)',
-                                    }}
-                                  >
-                                    Est. {fmtShortDollar(deal.estimatedFairPrice)}
-                                  </span>
-                                ) : (
-                                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                                    Built {h.yearBuilt}
-                                  </span>
-                                )}
+                                <ValuationBadge listing={pseudo} deal={deal} compact />
                               </div>
 
                               <h3
                                 className="listing-card__address"
                                 onClick={() => setSelectedParcelOrListingId(h.parcelId)}
                               >
-                                <HighlightedText text={h.address} query={unifiedFilters.q} />
+                                <HighlightedText
+                                  text={h.address}
+                                  query={unifiedFilters.nlQuery}
+                                />
                               </h3>
                               <div className="listing-card__sub">
                                 <strong>{h.style}</strong>
                               </div>
                             </div>
 
-                            {deal && (
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                <span
-                                  className={`badge priv-val ${
-                                    deal.status === 'underpriced'
-                                      ? 'badge--village'
-                                      : deal.status === 'overpriced'
-                                        ? 'badge--outside'
-                                        : ''
-                                  }`}
-                                >
-                                  {deal.badgeLabel}
-                                </span>
-                              </div>
-                            )}
-
                             <p className="listing-card__headline" style={{ margin: 0 }}>
-                              <HighlightedText text={h.styleSummary} query={unifiedFilters.q} />
+                              <HighlightedText
+                                text={h.styleSummary}
+                                query={unifiedFilters.nlQuery}
+                              />
                             </p>
 
-                            <div className="listing-card__specs">
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                color: 'var(--ink-2)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                              }}
+                            >
+                              <span>Stores: {h.distStoresMi} mi ({h.walkStoresMin}m)</span>
+                              <span>Marina: {h.distMarinaMi} mi ({h.walkMarinaMin}m)</span>
+                            </div>
+
+                            <div
+                              className="listing-card__specs"
+                              style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}
+                            >
                               <div>
                                 <strong>
                                   {h.beds}/{h.baths}
@@ -668,6 +755,10 @@ export const App: React.FC = () => {
                                 <strong>{h.lotAcres}</strong>
                                 <span>Acres</span>
                               </div>
+                              <div>
+                                <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
+                                <span>Beauty</span>
+                              </div>
                             </div>
                           </div>
                         </article>
@@ -681,20 +772,24 @@ export const App: React.FC = () => {
                         <tr>
                           <th>♥</th>
                           <th>Address &amp; Architectural Style</th>
+                          <th>Fit</th>
                           <th>Area</th>
                           <th>Price / Value</th>
                           <th>Valuation</th>
                           <th>Bd/Ba</th>
                           <th>Sq Ft</th>
+                          <th>$/Ft²</th>
                           <th>Acres</th>
+                          <th>Beauty</th>
                         </tr>
                       </thead>
                       <tbody>
                         {visibleHomes.map((h) => {
-                          const deal =
-                            h.isForSale || h.hasPastSale
-                              ? evaluateGoodDeal(toPseudoListing(h), allListings)
-                              : null;
+                          const ppsf = h.sqft > 0 ? Math.round(h.price / h.sqft) : 0;
+                          const pseudo = toPseudoListing(h);
+                          const deal = evaluateGoodDeal(pseudo, allListings);
+                          const fit = evaluateRobbieFit(pseudo);
+                          const beauty = evaluateArchitecturalBeauty(pseudo);
 
                           return (
                             <tr
@@ -710,7 +805,7 @@ export const App: React.FC = () => {
                                 <button
                                   type="button"
                                   className="status-dot-btn"
-                                  aria-label={`Favorite ${h.address}`}
+                                  aria-label={`Save ${h.address}`}
                                 >
                                   <Heart
                                     size={14}
@@ -721,11 +816,17 @@ export const App: React.FC = () => {
                               </td>
                               <td>
                                 <strong style={{ display: 'block' }}>
-                                  <HighlightedText text={h.address} query={unifiedFilters.q} />
+                                  <HighlightedText
+                                    text={h.address}
+                                    query={unifiedFilters.nlQuery}
+                                  />
                                 </strong>
                                 <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                                  {h.style}
+                                  {h.style} · Stores {h.distStoresMi}mi · Marina {h.distMarinaMi}mi
                                 </span>
+                              </td>
+                              <td onClick={(e) => e.stopPropagation()}>
+                                <RobbieFitBadge listing={pseudo} fit={fit} compact />
                               </td>
                               <td>{h.area}</td>
                               <td className="num priv-val">
@@ -734,30 +835,18 @@ export const App: React.FC = () => {
                                   {h.price.toLocaleString()}
                                 </strong>
                               </td>
-                              <td>
-                                {deal ? (
-                                  <span
-                                    className={`badge priv-val ${
-                                      deal.status === 'underpriced'
-                                        ? 'badge--village'
-                                        : deal.status === 'overpriced'
-                                          ? 'badge--outside'
-                                          : ''
-                                    }`}
-                                  >
-                                    {deal.badgeLabel}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--ink-2)', fontSize: 12 }}>
-                                    Off-Market
-                                  </span>
-                                )}
+                              <td onClick={(e) => e.stopPropagation()}>
+                                <ValuationBadge listing={pseudo} deal={deal} compact />
                               </td>
                               <td className="num">
                                 {h.beds}/{h.baths}
                               </td>
                               <td className="num">{h.sqft.toLocaleString()}</td>
+                              <td className="num priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</td>
                               <td className="num">{h.lotAcres}</td>
+                              <td className="num" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                                {beauty.display}
+                              </td>
                             </tr>
                           );
                         })}
@@ -786,52 +875,23 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      <CornerDock
-        theme={appState.preferences.theme}
-        privacyBlur={appState.preferences.privacyBlur}
-        scratchpad={appState.scratchpad}
-        onFocusSearch={() => {
-          setActiveView('listings');
-          window.setTimeout(() => searchInputRef.current?.focus(), 30);
-        }}
-        onTogglePrivacy={() =>
-          setAppState((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  preferences: {
-                    ...prev.preferences,
-                    privacyBlur: !prev.preferences.privacyBlur,
-                  },
-                }
-              : prev
-          )
-        }
-        onToggleTheme={() =>
-          setAppState((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  preferences: {
-                    ...prev.preferences,
-                    theme: prev.preferences.theme === 'dark' ? 'light' : 'dark',
-                  },
-                }
-              : prev
-          )
-        }
-        onChangeScratchpad={(val) =>
-          setAppState((prev) => (prev ? { ...prev, scratchpad: val } : prev))
-        }
-      />
-
       {/* Universal Slide-Over Property Detail Sheet (Opens for ANY of the 1,058 Village Homes!) */}
       <PropertyDrawer
         key={drawerListing?.id ?? 'none'}
         listing={drawerListing}
+        parcelMeta={
+          drawerHome
+            ? {
+                parcelId: drawerHome.parcelId,
+                owner: drawerHome.owner,
+                mail: drawerHome.mail,
+                absentee: drawerHome.parcelRef.absentee,
+              }
+            : null
+        }
         allListings={allListings}
         privacyBlur={appState.preferences.privacyBlur}
-        searchQuery={unifiedFilters.q}
+        searchQuery={unifiedFilters.nlQuery}
         hasPrev={false}
         hasNext={false}
         onPrev={() => {}}

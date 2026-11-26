@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, RotateCcw, Search, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, RotateCcw, Sparkles, X } from 'lucide-react';
 import {
+  BEAUTIFUL_STREET_OPTIONS,
   DESIGN_FEATURE_LABELS,
   DESIGN_FEATURE_OPTIONS,
   fmtShortDollar,
@@ -10,6 +11,7 @@ import {
   parseFlexibleNumber,
   type UnifiedFilters,
 } from '../lib/unifiedCatalog';
+import { parseNaturalLanguageQuery } from '../lib/nlSearch';
 
 interface UnifiedFilterBarProps {
   filters: UnifiedFilters;
@@ -18,7 +20,15 @@ interface UnifiedFilterBarProps {
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
-type OpenMenu = 'status' | 'price' | 'size' | 'lot' | 'area' | 'feat' | null;
+type OpenMenu = 'status' | 'price' | 'size' | 'lot' | 'area' | 'streets' | 'feat' | null;
+
+const NL_SUGGESTIONS = [
+  'All white houses',
+  'Houses with large lawns',
+  'Shingled 4+ bed on Bellport Ln or Livingston with pool or room for pool',
+  '★ Perfect Fit below South Country Rd',
+  'Quiet streets walkable to shops with porch',
+];
 
 export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   filters,
@@ -50,6 +60,8 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   }, [openMenu]);
 
   const patch = (p: Partial<UnifiedFilters>) => onChange({ ...filters, ...p });
+
+  const parsedNl = useMemo(() => parseNaturalLanguageQuery(filters.nlQuery), [filters.nlQuery]);
 
   // Summaries
   const statusParts: string[] = [];
@@ -124,13 +136,27 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           ? `Area (${areaCount})`
           : 'Area';
 
+  const streetsActive = filters.beautifulStreetsOnly || filters.beautifulStreets.length > 0;
+  const streetsSummary = !streetsActive
+    ? 'Beautiful Streets'
+    : filters.beautifulStreets.length === 1
+      ? BEAUTIFUL_STREET_OPTIONS.find((s) => s.id === filters.beautifulStreets[0])?.label ??
+        'Beautiful Street'
+      : filters.beautifulStreets.length > 1
+        ? `Beautiful Streets (${filters.beautifulStreets.length})`
+        : 'All Beautiful Streets';
+
+  const hasPoolFeat = filters.feats.includes('pool');
+  const hasSpacePoolFeat = filters.feats.includes('space_pool');
   const featCount = filters.feats.length;
   const featSummary =
     featCount === 0
       ? 'Features'
-      : featCount === 1
-        ? DESIGN_FEATURE_LABELS[filters.feats[0]] ?? filters.feats[0]
-        : `Features (${featCount})`;
+      : featCount === 2 && hasPoolFeat && hasSpacePoolFeat
+        ? 'Pool or Room for Pool'
+        : featCount === 1
+          ? DESIGN_FEATURE_LABELS[filters.feats[0]] ?? filters.feats[0]
+          : `Features (${featCount})`;
 
   const triggerStyle = (active: boolean): React.CSSProperties => ({
     height: 36,
@@ -146,7 +172,6 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     gap: 6,
   });
 
-
   const inputStyle: React.CSSProperties = {
     width: '100%',
     height: 34,
@@ -158,101 +183,205 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     fontSize: 12,
   };
 
+  const setPoolMode = (mode: 'none' | 'pool_only' | 'pool_or_room' | 'room_only') => {
+    const rest = filters.feats.filter((f) => f !== 'pool' && f !== 'space_pool');
+    if (mode === 'pool_only') patch({ feats: [...rest, 'pool'] });
+    else if (mode === 'room_only') patch({ feats: [...rest, 'space_pool'] });
+    else if (mode === 'pool_or_room') patch({ feats: [...rest, 'pool', 'space_pool'] });
+    else patch({ feats: rest });
+  };
+
+  const toggleBeautifulStreetId = (id: string) => {
+    const exists = filters.beautifulStreets.includes(id);
+    const next = exists
+      ? filters.beautifulStreets.filter((x) => x !== id)
+      : [...filters.beautifulStreets, id];
+    patch({
+      beautifulStreets: next,
+      beautifulStreetsOnly: next.length > 0,
+    });
+  };
+
   return (
-    <div
-      ref={barRef}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 10,
-        flexWrap: 'wrap',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {/* 1. STATUS + TIMELINE */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(statusActive)}
-            onClick={() => setOpenMenu((m) => (m === 'status' ? null : 'status'))}
+    <div ref={barRef} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Natural Language House Search Bar */}
+      <div
+        style={{
+          padding: '10px 14px',
+          borderRadius: 16,
+          background: 'var(--surface)',
+          border: filters.nlQuery.trim() ? '1.5px solid var(--accent)' : '1px solid var(--line)',
+          boxShadow: filters.nlQuery.trim() ? '0 2px 10px rgba(26,115,232,0.08)' : 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Sparkles size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={filters.nlQuery}
+            onChange={(e) => patch({ nlQuery: e.target.value, q: '' })}
+            placeholder='Search in plain English or by address — e.g. "all white houses", "houses with large lawns", or "shingled 4+ bed on Bellport Ln with pool or room for pool"'
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontSize: 13.5,
+              color: 'var(--ink)',
+            }}
+          />
+          {filters.nlQuery && (
+            <button
+              type="button"
+              onClick={() => patch({ nlQuery: '' })}
+              aria-label="Clear natural language search"
+              style={{
+                border: 'none',
+                background: 'var(--surface-subtle)',
+                borderRadius: 999,
+                width: 24,
+                height: 24,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--ink-2)',
+              }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {parsedNl.active ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--accent)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              Matched criteria:
+            </span>
+            {parsedNl.chips.length > 0 ? (
+              parsedNl.chips.map((c) => (
+                <span
+                  key={c}
+                  style={{
+                    fontSize: 11.5,
+                    padding: '2px 9px',
+                    borderRadius: 999,
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {c}
+                </span>
+              ))
+            ) : (
+              <span style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
+                Matching description keywords across all Bellport Village homes
+              </span>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              overflowX: 'auto',
+              paddingBottom: 2,
+            }}
           >
-            <span>{statusSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'status' && (
-            <div className="filter-popover">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Property Status
-                </strong>
-                {statusActive && (
+            <span style={{ fontSize: 11, color: 'var(--ink-muted)', flexShrink: 0 }}>Try:</span>
+            {NL_SUGGESTIONS.map((sug) => (
+              <button
+                key={sug}
+                type="button"
+                onClick={() => patch({ nlQuery: sug })}
+                style={{
+                  fontSize: 11.5,
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  border: '1px solid var(--line)',
+                  background: 'var(--surface-subtle)',
+                  color: 'var(--ink-2)',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                {sug}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Structured Filter Dropdown Row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* 1. STATUS + TIMELINE */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(statusActive)}
+              onClick={() => setOpenMenu((m) => (m === 'status' ? null : 'status'))}
+            >
+              <span>{statusSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'status' && (
+              <div className="filter-popover">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Property Status
+                  </strong>
+                  {statusActive && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patch({
+                          forSale: false,
+                          soldRecent: false,
+                          builtRecent: false,
+                          allPastSales: false,
+                          allHomes: false,
+                        })
+                      }
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <button
                     type="button"
-                    onClick={() =>
-                      patch({
-                        forSale: false,
-                        soldRecent: false,
-                        builtRecent: false,
-                        allPastSales: false,
-                        allHomes: false,
-                      })
-                    }
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => patch({ forSale: !filters.forSale })}
-                  style={{
-                    padding: '7px 10px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: filters.forSale ? 'var(--accent-soft)' : 'transparent',
-                    fontWeight: filters.forSale ? 600 : 400,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span
-                      style={{
-                        width: 11,
-                        height: 11,
-                        borderRadius: 3,
-                        background: '#9be3b0',
-                        border: '1px solid #1f7a46',
-                      }}
-                    />
-                    For Sale
-                  </span>
-                  <span>{filters.forSale ? '✓' : ''}</span>
-                </button>
-
-                {/* Sold Recently + Years Selector */}
-                <div
-                  style={{
-                    borderRadius: 12,
-                    padding: filters.soldRecent ? 8 : 0,
-                    background: filters.soldRecent ? 'var(--accent-soft)' : 'transparent',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => patch({ soldRecent: !filters.soldRecent })}
+                    onClick={() => patch({ forSale: !filters.forSale })}
                     style={{
-                      width: '100%',
-                      padding: filters.soldRecent ? '2px 2px 6px' : '7px 10px',
+                      padding: '7px 10px',
                       borderRadius: 10,
                       border: 'none',
-                      background: 'transparent',
-                      fontWeight: filters.soldRecent ? 600 : 400,
+                      background: filters.forSale ? 'var(--accent-soft)' : 'transparent',
+                      fontWeight: filters.forSale ? 600 : 400,
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
@@ -264,95 +393,143 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                           width: 11,
                           height: 11,
                           borderRadius: 3,
-                          background: '#9cd3e8',
-                          border: '1px solid #1e6b8c',
+                          background: '#9be3b0',
+                          border: '1px solid #1f7a46',
                         }}
                       />
-                      Sold recently
+                      For Sale
                     </span>
-                    <span>{filters.soldRecent ? '✓' : ''}</span>
+                    <span>{filters.forSale ? '✓' : ''}</span>
                   </button>
-                  {filters.soldRecent && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
-                        <span>Within last (years):</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={filters.soldYears}
-                          onChange={(e) =>
-                            patch({ soldYears: Math.max(1, Math.min(25, Number(e.target.value) || 3)) })
-                          }
-                          style={{ ...inputStyle, width: 56, height: 26, textAlign: 'center' }}
+
+                  {/* Sold Recently + Years Selector */}
+                  <div
+                    style={{
+                      borderRadius: 12,
+                      padding: filters.soldRecent ? 8 : 0,
+                      background: filters.soldRecent ? 'var(--accent-soft)' : 'transparent',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => patch({ soldRecent: !filters.soldRecent })}
+                      style={{
+                        width: '100%',
+                        padding: filters.soldRecent ? '2px 2px 6px' : '7px 10px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: 'transparent',
+                        fontWeight: filters.soldRecent ? 600 : 400,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            width: 11,
+                            height: 11,
+                            borderRadius: 3,
+                            background: '#9cd3e8',
+                            border: '1px solid #1e6b8c',
+                          }}
                         />
-                      </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {[1, 2, 3, 5, 10].map((yr) => (
+                        Sold recently
+                      </span>
+                      <span>{filters.soldRecent ? '✓' : ''}</span>
+                    </button>
+                    {filters.soldRecent && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>Within:</span>
+                        {[1, 3, 5, 10, 20].map((yr) => (
                           <button
                             key={yr}
                             type="button"
                             onClick={() => patch({ soldYears: yr })}
                             style={{
-                              flex: 1,
-                              padding: '4px 0',
-                              borderRadius: 8,
+                              padding: '3px 8px',
+                              borderRadius: 999,
                               border: '1px solid var(--line)',
                               background: filters.soldYears === yr ? 'var(--accent)' : '#ffffff',
                               color: filters.soldYears === yr ? '#ffffff' : 'var(--ink)',
                               fontSize: 11,
-                              fontFamily: 'var(--font-mono)',
                             }}
                           >
                             {yr}y
                           </button>
                         ))}
+                        <input
+                          type="number"
+                          min={1}
+                          max={35}
+                          value={filters.soldYears}
+                          onChange={(e) =>
+                            patch({ soldYears: Math.max(1, Math.min(35, Number(e.target.value) || 3)) })
+                          }
+                          style={{ ...inputStyle, width: 52, height: 26, padding: '0 6px' }}
+                        />
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
 
-                {/* Built Recently + Years Selector */}
-                <div
-                  style={{
-                    borderRadius: 12,
-                    padding: filters.builtRecent ? 8 : 0,
-                    background: filters.builtRecent ? 'var(--accent-soft)' : 'transparent',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => patch({ builtRecent: !filters.builtRecent })}
+                  {/* Built Recently + Years Selector */}
+                  <div
                     style={{
-                      width: '100%',
-                      padding: filters.builtRecent ? '2px 2px 6px' : '7px 10px',
-                      borderRadius: 10,
-                      border: 'none',
-                      background: 'transparent',
-                      fontWeight: filters.builtRecent ? 600 : 400,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
+                      borderRadius: 12,
+                      padding: filters.builtRecent ? 8 : 0,
+                      background: filters.builtRecent ? 'var(--accent-soft)' : 'transparent',
                     }}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        style={{
-                          width: 11,
-                          height: 11,
-                          borderRadius: 3,
-                          background: '#f7d98c',
-                          border: '1px solid #b07412',
-                        }}
-                      />
-                      Built recently
-                    </span>
-                    <span>{filters.builtRecent ? '✓' : ''}</span>
-                  </button>
-                  {filters.builtRecent && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
-                        <span>Within last (years):</span>
+                    <button
+                      type="button"
+                      onClick={() => patch({ builtRecent: !filters.builtRecent })}
+                      style={{
+                        width: '100%',
+                        padding: filters.builtRecent ? '2px 2px 6px' : '7px 10px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: 'transparent',
+                        fontWeight: filters.builtRecent ? 600 : 400,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            width: 11,
+                            height: 11,
+                            borderRadius: 3,
+                            background: '#f7d98c',
+                            border: '1px solid #b07412',
+                          }}
+                        />
+                        Built recently
+                      </span>
+                      <span>{filters.builtRecent ? '✓' : ''}</span>
+                    </button>
+                    {filters.builtRecent && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>Within:</span>
+                        {[1, 3, 5, 10, 20].map((yr) => (
+                          <button
+                            key={yr}
+                            type="button"
+                            onClick={() => patch({ builtYears: yr })}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: 999,
+                              border: '1px solid var(--line)',
+                              background: filters.builtYears === yr ? 'var(--accent)' : '#ffffff',
+                              color: filters.builtYears === yr ? '#ffffff' : 'var(--ink)',
+                              fontSize: 11,
+                            }}
+                          >
+                            {yr}y
+                          </button>
+                        ))}
                         <input
                           type="number"
                           min={1}
@@ -361,35 +538,14 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                           onChange={(e) =>
                             patch({ builtYears: Math.max(1, Math.min(40, Number(e.target.value) || 5)) })
                           }
-                          style={{ ...inputStyle, width: 56, height: 26, textAlign: 'center' }}
+                          style={{ ...inputStyle, width: 52, height: 26, padding: '0 6px' }}
                         />
                       </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {[1, 3, 5, 10, 20].map((yr) => (
-                          <button
-                            key={yr}
-                            type="button"
-                            onClick={() => patch({ builtYears: yr })}
-                            style={{
-                              flex: 1,
-                              padding: '4px 0',
-                              borderRadius: 8,
-                              border: '1px solid var(--line)',
-                              background: filters.builtYears === yr ? 'var(--accent)' : '#ffffff',
-                              color: filters.builtYears === yr ? '#ffffff' : 'var(--ink)',
-                              fontSize: 11,
-                              fontFamily: 'var(--font-mono)',
-                            }}
-                          >
-                            {yr}y
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
 
-                <div style={{ borderTop: '1px solid var(--line)', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }} />
+
                   <button
                     type="button"
                     onClick={() => patch({ allPastSales: !filters.allPastSales })}
@@ -403,9 +559,10 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                       justifyContent: 'space-between',
                     }}
                   >
-                    <span>All Past Sales</span>
+                    <span>All Past Sales (1993–2026)</span>
                     <span>{filters.allPastSales ? '✓' : ''}</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => patch({ allHomes: !filters.allHomes })}
@@ -419,475 +576,714 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                       justifyContent: 'space-between',
                     }}
                   >
-                    <span>All Homes (1,058)</span>
+                    <span>All Village Homes (1,058)</span>
                     <span>{filters.allHomes ? '✓' : ''}</span>
                   </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
 
-        {/* 2. PRICE (LOW & HIGH) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(priceActive)}
-            onClick={() => setOpenMenu((m) => (m === 'price' ? null : 'price'))}
-          >
-            <span>{priceSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'price' && (
-            <div className="filter-popover">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Price / Est. Value
-                </strong>
-                {priceActive && (
-                  <button
-                    type="button"
-                    onClick={() => patch({ minPrice: null, maxPrice: null })}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
-                    Low ($)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 800k"
-                    defaultValue={filters.minPrice ?? ''}
-                    onChange={(e) => patch({ minPrice: parseFlexibleNumber(e.target.value) })}
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
-                    High ($)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 2.5m"
-                    defaultValue={filters.maxPrice ?? ''}
-                    onChange={(e) => patch({ maxPrice: parseFlexibleNumber(e.target.value) })}
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {[1_000_000, 1_500_000, 2_000_000, 3_000_000].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => patch({ minPrice: null, maxPrice: v })}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: filters.maxPrice === v ? 'var(--accent)' : 'var(--bg)',
-                      color: filters.maxPrice === v ? '#ffffff' : 'var(--ink)',
-                      fontSize: 11,
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    ≤{fmtShortDollar(v)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 3. SIZE (BEDROOMS, BATHROOMS, SQUARE FOOTAGE) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(sizeActive)}
-            onClick={() => setOpenMenu((m) => (m === 'size' ? null : 'size'))}
-          >
-            <span>{sizeSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'size' && (
-            <div className="filter-popover" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Home Size
-                </strong>
-                {sizeActive && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      patch({
-                        minBeds: null,
-                        maxBeds: null,
-                        minBaths: null,
-                        maxBaths: null,
-                        minSqft: null,
-                        maxSqft: null,
-                      })
-                    }
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              <div>
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>Bedrooms</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <select
-                    value={filters.minBeds ?? ''}
-                    onChange={(e) => patch({ minBeds: e.target.value ? Number(e.target.value) : null })}
-                    style={inputStyle}
-                  >
-                    <option value="">Min Beds</option>
-                    {[1, 2, 3, 4, 5, 6].map((n) => (
-                      <option key={n} value={n}>
-                        {n}+ bd
-                      </option>
+                  <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }} />
+                  <strong style={{ fontSize: 10.5, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Valuation Rating
+                  </strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['', 'underpriced', 'overpriced'] as const).map((v) => (
+                      <button
+                        key={v || 'any'}
+                        type="button"
+                        onClick={() => patch({ valuation: v })}
+                        style={{
+                          flex: 1,
+                          padding: '5px 8px',
+                          borderRadius: 999,
+                          border: '1px solid var(--line)',
+                          background: filters.valuation === v ? 'var(--accent)' : 'transparent',
+                          color: filters.valuation === v ? '#ffffff' : 'var(--ink)',
+                          fontSize: 11.5,
+                        }}
+                      >
+                        {v === '' ? 'Any' : v === 'underpriced' ? 'Underpriced' : 'Overpriced'}
+                      </button>
                     ))}
-                  </select>
-                  <select
-                    value={filters.maxBeds ?? ''}
-                    onChange={(e) => patch({ maxBeds: e.target.value ? Number(e.target.value) : null })}
-                    style={inputStyle}
-                  >
-                    <option value="">Max Beds</option>
-                    {[2, 3, 4, 5, 6, 7].map((n) => (
-                      <option key={n} value={n}>
-                        ≤ {n} bd
-                      </option>
+                  </div>
+
+                  <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }} />
+                  <strong style={{ fontSize: 10.5, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Fit for Robbie
+                  </strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {(
+                      [
+                        ['', 'Any'],
+                        ['perfect', '★ Perfect Fit'],
+                        ['great_plus', 'Great + Perfect'],
+                        ['good_plus', 'Good Fit+'],
+                      ] as const
+                    ).map(([v, lbl]) => (
+                      <button
+                        key={v || 'any-fit'}
+                        type="button"
+                        onClick={() => patch({ robbieFit: v })}
+                        style={{
+                          padding: '5px 8px',
+                          borderRadius: 999,
+                          border: '1px solid var(--line)',
+                          background: filters.robbieFit === v ? 'var(--accent)' : 'transparent',
+                          color: filters.robbieFit === v ? '#ffffff' : 'var(--ink)',
+                          fontSize: 11.5,
+                        }}
+                      >
+                        {lbl}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
 
-              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>Bathrooms</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <select
-                    value={filters.minBaths ?? ''}
-                    onChange={(e) => patch({ minBaths: e.target.value ? Number(e.target.value) : null })}
-                    style={inputStyle}
-                  >
-                    <option value="">Min Baths</option>
-                    {[1, 1.5, 2, 2.5, 3, 4].map((n) => (
-                      <option key={n} value={n}>
-                        {n}+ ba
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={filters.maxBaths ?? ''}
-                    onChange={(e) => patch({ maxBaths: e.target.value ? Number(e.target.value) : null })}
-                    style={inputStyle}
-                  >
-                    <option value="">Max Baths</option>
-                    {[1.5, 2, 2.5, 3, 4, 5, 6].map((n) => (
-                      <option key={n} value={n}>
-                        ≤ {n} ba
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-                <div style={{ fontWeight: 500, marginBottom: 4 }}>Square Footage (ft²)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <input
-                    type="text"
-                    placeholder="Low ft²"
-                    defaultValue={filters.minSqft ?? ''}
-                    onChange={(e) => patch({ minSqft: parseFlexibleNumber(e.target.value) })}
-                    style={inputStyle}
-                  />
-                  <input
-                    type="text"
-                    placeholder="High ft²"
-                    defaultValue={filters.maxSqft ?? ''}
-                    onChange={(e) => patch({ maxSqft: parseFlexibleNumber(e.target.value) })}
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 4. LOT (LOW & HIGH ACRES) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(lotActive)}
-            onClick={() => setOpenMenu((m) => (m === 'lot' ? null : 'lot'))}
-          >
-            <span>{lotSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'lot' && (
-            <div className="filter-popover">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Lot Size (Acres)
-                </strong>
-                {lotActive && (
-                  <button
-                    type="button"
-                    onClick={() => patch({ minLot: null, maxLot: null })}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                <input
-                  type="text"
-                  placeholder="Low ac"
-                  defaultValue={filters.minLot ?? ''}
-                  onChange={(e) => patch({ minLot: parseFlexibleNumber(e.target.value) })}
-                  style={inputStyle}
-                />
-                <input
-                  type="text"
-                  placeholder="High ac"
-                  defaultValue={filters.maxLot ?? ''}
-                  onChange={(e) => patch({ maxLot: parseFlexibleNumber(e.target.value) })}
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                {[0.35, 0.5, 0.75, 1.0].map((a) => (
-                  <button
-                    key={a}
-                    type="button"
-                    onClick={() => patch({ minLot: a, maxLot: null })}
-                    style={{
-                      flex: 1,
-                      padding: '4px 0',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: filters.minLot === a ? 'var(--accent)' : 'var(--bg)',
-                      color: filters.minLot === a ? '#ffffff' : 'var(--ink)',
-                      fontSize: 11,
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    {a}+ ac
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 5. AREA (BELOW SOUTH COUNTRY RD + 4 COLLECTIVELY EXHAUSTIVE AREAS) */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(areaCount > 0)}
-            onClick={() => setOpenMenu((m) => (m === 'area' ? null : 'area'))}
-          >
-            <span>{areaSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'area' && (
-            <div className="filter-popover">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Village Area
-                </strong>
-                {areaCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => patch({ belowSC: false, areas: [] })}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => patch({ belowSC: !filters.belowSC })}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  border: '1px solid var(--line)',
-                  background: filters.belowSC ? 'var(--accent)' : 'var(--bg)',
-                  color: filters.belowSC ? '#ffffff' : 'var(--ink)',
-                  fontWeight: 600,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 8,
-                }}
-              >
-                <span>Below South Country Rd</span>
-                <span>{filters.belowSC ? '✓' : ''}</span>
-              </button>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {MECE_VILLAGE_AREAS.map((a) => {
-                  const active = filters.areas.includes(a.value);
-                  return (
+          {/* 2. PRICE (LOW / HIGH) */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(priceActive)}
+              onClick={() => setOpenMenu((m) => (m === 'price' ? null : 'price'))}
+            >
+              <span>{priceSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'price' && (
+              <div className="filter-popover">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Price Range ($)
+                  </strong>
+                  {priceActive && (
                     <button
-                      key={a.value}
+                      type="button"
+                      onClick={() => patch({ minPrice: null, maxPrice: null })}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>Low ($)</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="No min (e.g. 800k)"
+                      defaultValue={filters.minPrice ?? ''}
+                      onBlur={(e) => patch({ minPrice: parseFlexibleNumber(e.target.value) })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          patch({ minPrice: parseFlexibleNumber((e.target as HTMLInputElement).value) });
+                        }
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>High ($)</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="No max (e.g. 2.5m)"
+                      defaultValue={filters.maxPrice ?? ''}
+                      onBlur={(e) => patch({ maxPrice: parseFlexibleNumber(e.target.value) })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          patch({ maxPrice: parseFlexibleNumber((e.target as HTMLInputElement).value) });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {[
+                    ['<$1M', null, 1_000_000],
+                    ['$1M–$2M', 1_000_000, 2_000_000],
+                    ['$2M–$3.5M', 2_000_000, 3_500_000],
+                    ['$3.5M+', 3_500_000, null],
+                  ].map(([lbl, lo, hi]) => (
+                    <button
+                      key={lbl as string}
+                      type="button"
+                      onClick={() =>
+                        patch({ minPrice: lo as number | null, maxPrice: hi as number | null })
+                      }
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        border: '1px solid var(--line)',
+                        background: 'var(--bg)',
+                        fontSize: 11.5,
+                      }}
+                    >
+                      {lbl as string}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. SIZE (BEDS, BATHS, SQ FT) */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(sizeActive)}
+              onClick={() => setOpenMenu((m) => (m === 'size' ? null : 'size'))}
+            >
+              <span>{sizeSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'size' && (
+              <div className="filter-popover filter-popover--wide">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Home Size
+                  </strong>
+                  {sizeActive && (
+                    <button
                       type="button"
                       onClick={() =>
                         patch({
-                          areas: active
-                            ? filters.areas.filter((x) => x !== a.value)
-                            : [...filters.areas, a.value],
+                          minBeds: null,
+                          maxBeds: null,
+                          minBaths: null,
+                          maxBaths: null,
+                          minSqft: null,
+                          maxSqft: null,
                         })
                       }
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Bedrooms
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={12}
+                      style={inputStyle}
+                      placeholder="Min beds"
+                      value={filters.minBeds ?? ''}
+                      onChange={(e) =>
+                        patch({ minBeds: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={12}
+                      style={inputStyle}
+                      placeholder="Max beds"
+                      value={filters.maxBeds ?? ''}
+                      onChange={(e) =>
+                        patch({ maxBeds: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Bathrooms
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min={0}
+                      max={12}
+                      style={inputStyle}
+                      placeholder="Min baths"
+                      value={filters.minBaths ?? ''}
+                      onChange={(e) =>
+                        patch({ minBaths: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                    <input
+                      type="number"
+                      step="0.5"
+                      min={0}
+                      max={12}
+                      style={inputStyle}
+                      placeholder="Max baths"
+                      value={filters.maxBaths ?? ''}
+                      onChange={(e) =>
+                        patch({ maxBaths: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Interior Square Footage
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input
+                      type="number"
+                      step={100}
+                      style={inputStyle}
+                      placeholder="Low sq ft"
+                      value={filters.minSqft ?? ''}
+                      onChange={(e) =>
+                        patch({ minSqft: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                    <input
+                      type="number"
+                      step={100}
+                      style={inputStyle}
+                      placeholder="High sq ft"
+                      value={filters.maxSqft ?? ''}
+                      onChange={(e) =>
+                        patch({ maxSqft: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. LOT (LOW / HIGH ACRES) */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(lotActive)}
+              onClick={() => setOpenMenu((m) => (m === 'lot' ? null : 'lot'))}
+            >
+              <span>{lotSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'lot' && (
+              <div className="filter-popover">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Lot Size (Acres)
+                  </strong>
+                  {lotActive && (
+                    <button
+                      type="button"
+                      onClick={() => patch({ minLot: null, maxLot: null })}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>Low (ac)</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      style={inputStyle}
+                      placeholder="No min"
+                      value={filters.minLot ?? ''}
+                      onChange={(e) =>
+                        patch({ minLot: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>High (ac)</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      style={inputStyle}
+                      placeholder="No max"
+                      value={filters.maxLot ?? ''}
+                      onChange={(e) =>
+                        patch({ maxLot: e.target.value ? Number(e.target.value) : null })
+                      }
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                  {[0.25, 0.5, 0.75, 1.0].map((ac) => (
+                    <button
+                      key={ac}
+                      type="button"
+                      onClick={() => patch({ minLot: ac })}
                       style={{
-                        padding: '6px 10px',
-                        borderRadius: 10,
-                        border: 'none',
-                        background: active ? 'var(--accent-soft)' : 'transparent',
-                        textAlign: 'left',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        border: '1px solid var(--line)',
+                        background: filters.minLot === ac ? 'var(--accent)' : 'var(--bg)',
+                        color: filters.minLot === ac ? '#ffffff' : 'var(--ink)',
+                        fontSize: 11.5,
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: active ? 600 : 400 }}>{a.label}</div>
-                        <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{a.sub}</div>
-                      </div>
-                      <span>{active ? '✓' : ''}</span>
+                      {ac}+ ac
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* 6. FEATURES & DESIGN ELEMENTS */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={triggerStyle(featCount > 0)}
-            onClick={() => setOpenMenu((m) => (m === 'feat' ? null : 'feat'))}
-          >
-            <span>{featSummary}</span>
-            <ChevronDown size={13} />
-          </button>
-          {openMenu === 'feat' && (
-            <div className="filter-popover filter-popover--right" style={{ maxHeight: 380, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
-                  Features &amp; Design
-                </strong>
-                {featCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => patch({ feats: [] })}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+          {/* 5. BEAUTIFUL STREETS & SECTIONS */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(streetsActive)}
+              onClick={() => setOpenMenu((m) => (m === 'streets' ? null : 'streets'))}
+            >
+              <span>{streetsSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'streets' && (
+              <div className="filter-popover filter-popover--wide">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Most Beautiful Streets & Sections
+                  </strong>
+                  {streetsActive && (
+                    <button
+                      type="button"
+                      onClick={() => patch({ beautifulStreetsOnly: false, beautifulStreets: [] })}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
 
-              {(['Grounds & Water', 'Architecture & Spaces'] as const).map((grp) => (
-                <div key={grp} style={{ marginBottom: 8 }}>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      color: 'var(--ink-2)',
-                      padding: '4px 8px',
-                    }}
-                  >
-                    {grp}
+                <button
+                  type="button"
+                  onClick={() =>
+                    patch({
+                      beautifulStreetsOnly: ! (filters.beautifulStreetsOnly && filters.beautifulStreets.length === 0),
+                      beautifulStreets: [],
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 12,
+                    border:
+                      filters.beautifulStreetsOnly && filters.beautifulStreets.length === 0
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--line)',
+                    background:
+                      filters.beautifulStreetsOnly && filters.beautifulStreets.length === 0
+                        ? 'var(--accent-soft)'
+                        : 'var(--bg)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 10,
+                    textAlign: 'left',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                      All 8 Scenic Streets & Best Sections
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                      Highlights every selected lane directly on the Village map
+                    </div>
                   </div>
-                  {DESIGN_FEATURE_OPTIONS.filter((f) => f.group === grp).map((f) => {
-                    const active = filters.feats.includes(f.value);
+                  <span style={{ fontWeight: 700, color: 'var(--accent)' }}>
+                    {filters.beautifulStreetsOnly && filters.beautifulStreets.length === 0 ? '✓' : ''}
+                  </span>
+                </button>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    maxHeight: 300,
+                    overflowY: 'auto',
+                  }}
+                >
+                  {BEAUTIFUL_STREET_OPTIONS.map((st) => {
+                    const on = filters.beautifulStreets.includes(st.id);
                     return (
                       <button
-                        key={f.value}
+                        key={st.id}
                         type="button"
-                        onClick={() =>
-                          patch({
-                            feats: active
-                              ? filters.feats.filter((x) => x !== f.value)
-                              : [...filters.feats, f.value],
-                          })
-                        }
+                        onClick={() => toggleBeautifulStreetId(st.id)}
                         style={{
-                          width: '100%',
-                          padding: '6px 10px',
+                          padding: '7px 10px',
                           borderRadius: 10,
                           border: 'none',
-                          background: active ? 'var(--accent-soft)' : 'transparent',
-                          fontWeight: active ? 600 : 400,
-                          textAlign: 'left',
+                          background: on ? 'var(--accent-soft)' : 'transparent',
                           display: 'flex',
                           justifyContent: 'space-between',
+                          alignItems: 'center',
+                          textAlign: 'left',
                         }}
                       >
-                        <span>{f.label}</span>
-                        <span>{active ? '✓' : ''}</span>
+                        <div>
+                          <div style={{ fontSize: 12.5, fontWeight: on ? 600 : 400 }}>{st.label}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{st.sub}</div>
+                        </div>
+                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>
+                          {on ? '✓' : ''}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+          </div>
+
+          {/* 6. AREA */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(areaCount > 0)}
+              onClick={() => setOpenMenu((m) => (m === 'area' ? null : 'area'))}
+            >
+              <span>{areaSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'area' && (
+              <div className="filter-popover filter-popover--wide">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Village Areas (100% Coverage)
+                  </strong>
+                  {areaCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => patch({ belowSC: false, areas: [] })}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => patch({ belowSC: !filters.belowSC })}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: 12,
+                    border: filters.belowSC ? '1px solid var(--accent)' : '1px solid var(--line)',
+                    background: filters.belowSC ? 'var(--accent-soft)' : 'var(--bg)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 10,
+                    textAlign: 'left',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>Below South Country Road</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                      South of Main St · Bay, Marina & Historic Lanes
+                    </div>
+                  </div>
+                  <span style={{ fontWeight: 700 }}>{filters.belowSC ? '✓' : ''}</span>
+                </button>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {MECE_VILLAGE_AREAS.map((a) => {
+                    const on = filters.areas.includes(a.value);
+                    return (
+                      <button
+                        key={a.value}
+                        type="button"
+                        onClick={() =>
+                          patch({
+                            areas: on
+                              ? filters.areas.filter((x) => x !== a.value)
+                              : [...filters.areas, a.value],
+                          })
+                        }
+                        style={{
+                          padding: '7px 10px',
+                          borderRadius: 10,
+                          border: 'none',
+                          background: on ? 'var(--accent-soft)' : 'transparent',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 12.5, fontWeight: on ? 600 : 400 }}>{a.label}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{a.sub}</div>
+                        </div>
+                        <span>{on ? '✓' : ''}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 7. DESIGN & GROUNDS FEATURES (WITH POOL OR-LOGIC) */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(featCount > 0)}
+              onClick={() => setOpenMenu((m) => (m === 'feat' ? null : 'feat'))}
+            >
+              <span>{featSummary}</span>
+              <ChevronDown size={13} />
+            </button>
+            {openMenu === 'feat' && (
+              <div className="filter-popover filter-popover--wide">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11, color: 'var(--ink-2)', textTransform: 'uppercase' }}>
+                    Pool, Grounds & Architecture
+                  </strong>
+                  {featCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => patch({ feats: [] })}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Dedicated Pool Selector: Current Pool Only vs Pool or Room for Pool vs Room for Pool */}
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 12,
+                    background: 'var(--surface-subtle)',
+                    border: '1px solid var(--line)',
+                    marginBottom: 10,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>
+                    Pool Preference
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {[
+                      {
+                        mode: 'pool_only' as const,
+                        label: 'Current Pool Only',
+                        active: hasPoolFeat && !hasSpacePoolFeat,
+                      },
+                      {
+                        mode: 'pool_or_room' as const,
+                        label: 'Pool or Room for Pool',
+                        active: hasPoolFeat && hasSpacePoolFeat,
+                      },
+                      {
+                        mode: 'room_only' as const,
+                        label: 'Room for Pool Only',
+                        active: !hasPoolFeat && hasSpacePoolFeat,
+                      },
+                      {
+                        mode: 'none' as const,
+                        label: 'Any / No Filter',
+                        active: !hasPoolFeat && !hasSpacePoolFeat,
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        onClick={() => setPoolMode(opt.mode)}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 8,
+                          border: opt.active ? '1px solid var(--accent)' : '1px solid var(--line)',
+                          background: opt.active ? 'var(--accent)' : '#ffffff',
+                          color: opt.active ? '#ffffff' : 'var(--ink)',
+                          fontSize: 11.5,
+                          fontWeight: opt.active ? 600 : 400,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(['Grounds & Water', 'Architecture & Spaces'] as const).map((grp) => (
+                  <div key={grp} style={{ marginBottom: 8 }}>
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        color: 'var(--ink-2)',
+                        textTransform: 'uppercase',
+                        margin: '6px 0 4px',
+                      }}
+                    >
+                      {grp}
+                    </div>
+                    {DESIGN_FEATURE_OPTIONS.filter((f) => f.group === grp).map((f) => {
+                      const on = filters.feats.includes(f.value);
+                      return (
+                        <button
+                          key={f.value}
+                          type="button"
+                          onClick={() =>
+                            patch({
+                              feats: on
+                                ? filters.feats.filter((x) => x !== f.value)
+                                : [...filters.feats, f.value],
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '6px 10px',
+                            borderRadius: 9,
+                            border: 'none',
+                            background: on ? 'var(--accent-soft)' : 'transparent',
+                            fontWeight: on ? 600 : 400,
+                            fontSize: 12.5,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span>{f.label}</span>
+                          <span>{on ? '✓' : ''}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {isAnyUnifiedFilterActive(filters) && (
+            <button
+              type="button"
+              onClick={() => onChange(INITIAL_UNIFIED_FILTERS)}
+              style={{
+                height: 36,
+                padding: '0 12px',
+                borderRadius: 999,
+                border: '1px solid var(--line)',
+                background: 'transparent',
+                color: 'var(--ink-2)',
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+            >
+              <RotateCcw size={12} />
+              <span>Reset</span>
+            </button>
           )}
         </div>
-
-        {isAnyUnifiedFilterActive(filters) && (
-          <button
-            type="button"
-            className="icon-btn"
-            style={{ height: 36 }}
-            onClick={() => onChange(INITIAL_UNIFIED_FILTERS)}
-          >
-            <RotateCcw size={13} />
-            <span>Reset</span>
-          </button>
-        )}
-      </div>
-
-      {/* Keyword / Address Search */}
-      <div className="search-box" style={{ minWidth: 210 }}>
-        <Search size={15} className="search-box__icon" />
-        <input
-          id="keyword-search-input"
-          ref={searchInputRef}
-          type="search"
-          className="search-box__input"
-          style={{ height: 36, fontSize: 12.5 }}
-          value={filters.q}
-          onChange={(e) => patch({ q: e.target.value })}
-          placeholder="Search street or feature…"
-          aria-label="Search Bellport Village homes"
-        />
-        {filters.q && (
-          <button
-            type="button"
-            className="search-box__clear"
-            onClick={() => patch({ q: '' })}
-            aria-label="Clear search"
-          >
-            <X size={13} />
-          </button>
-        )}
       </div>
     </div>
   );

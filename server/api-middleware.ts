@@ -213,6 +213,32 @@ export async function handleApiRequest(
       return true;
     }
 
+    if (req.method === 'POST' && pathname === '/api/alerts/draft-email') {
+      const body = await readJsonBody<{ to?: string; subject?: string; body?: string }>(req);
+      const to = (body.to ?? 'robbiebrown07@gmail.com').trim();
+      const subject = (body.subject ?? 'Bellport, NY Listing Alert').trim();
+      const text = (body.body ?? '').trim();
+      if (!to || !text) {
+        sendJson(res, 400, { error: 'Missing recipient or alert body.' });
+        return true;
+      }
+      try {
+        const { execFileSync } = await import('node:child_process');
+        execFileSync(
+          'gmail',
+          ['mutate', 'create-draft', '--to', to, '--subject', subject, '--body', text],
+          { timeout: 12_000, stdio: 'pipe' }
+        );
+        sendJson(res, 200, {
+          ok: true,
+          message: `Created Gmail alert draft addressed to ${to}`,
+        });
+      } catch {
+        sendJson(res, 200, { ok: false });
+      }
+      return true;
+    }
+
     sendJson(res, 404, { error: `Unknown API route: ${pathname}` });
     return true;
   } catch (err) {
