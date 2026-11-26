@@ -30,7 +30,7 @@ interface VillageParcelMapViewProps {
   onSyncMetaUpdate: (meta: SyncMetadata) => void;
 }
 
-type FeatureCircleKey =
+type FeatureKey =
   | 'est4br'
   | 'under3m'
   | 'under15m'
@@ -44,44 +44,73 @@ type FeatureCircleKey =
   | 'ferryWalk'
   | 'absentee';
 
-const FEATURE_CHIPS: Array<{ key: FeatureCircleKey; label: string }> = [
-  { key: 'est4br', label: 'Est. 4+ BR (or 2,350+ ft²)' },
-  { key: 'under3m', label: 'Est. Value < $3M' },
-  { key: 'under15m', label: 'Est. Value < $1.5M' },
-  { key: 'notSoldRecent', label: 'Not Sold in Past 3 Yrs' },
+type OutlineTarget = 'home' | 'lot';
+
+const FEATURE_CHIPS: Array<{ key: FeatureKey; label: string }> = [
+  { key: 'est4br', label: '4+ BR (or 2,350+ ft²)' },
+  { key: 'under3m', label: '< $3M Est.' },
+  { key: 'under15m', label: '< $1.5M Est.' },
+  { key: 'notSoldRecent', label: 'Not Sold ≤3 Yrs' },
   { key: 'offMarketOnly', label: 'Off-Market Only' },
-  { key: 'pool', label: 'Swimming Pool' },
-  { key: 'halfAcre', label: '0.5+ Acre Lot' },
-  { key: 'oneAcre', label: '1.0+ Acre Estate' },
-  { key: 'waterfront', label: 'Waterfront / Bayfront' },
+  { key: 'pool', label: 'Pool' },
+  { key: 'halfAcre', label: '0.5+ Acre' },
+  { key: 'oneAcre', label: '1.0+ Acre' },
+  { key: 'waterfront', label: 'Waterfront' },
   { key: 'historic', label: 'Historic Lanes' },
-  { key: 'ferryWalk', label: '< 8m Walk to Ferry' },
-  { key: 'absentee', label: 'NYC / 2nd-Home Owner' },
+  { key: 'ferryWalk', label: '< 8m to Ferry' },
+  { key: 'absentee', label: 'NYC / 2nd Home' },
 ];
 
 const CATEGORY_META: Record<
   ParcelStatusCategory,
-  { label: string; fill: string; stroke: string }
+  {
+    label: string;
+    dot: string;
+    lotFill: string;
+    bldgFill: string;
+    bldgStroke: string;
+  }
 > = {
-  for_sale: { label: 'For Sale Now', fill: '#ea4335', stroke: '#ffffff' },
-  built_3yr: { label: 'Built Past 3 Yrs (2023+)', fill: '#fbbc04', stroke: '#202124' },
-  sold_3yr: { label: 'Sold Past 3 Yrs (2023+)', fill: '#34a853', stroke: '#ffffff' },
-  other: { label: 'Other Village Homes', fill: '#d7dce4', stroke: '#8b95a5' },
+  for_sale: {
+    label: 'For Sale',
+    dot: '#ea4335',
+    lotFill: 'rgba(234, 67, 53, 0.13)',
+    bldgFill: '#ea4335',
+    bldgStroke: '#b31412',
+  },
+  built_3yr: {
+    label: 'Built ≤3 Yrs',
+    dot: '#f9ab00',
+    lotFill: 'rgba(251, 188, 4, 0.18)',
+    bldgFill: '#fbbc04',
+    bldgStroke: '#b06000',
+  },
+  sold_3yr: {
+    label: 'Sold ≤3 Yrs',
+    dot: '#34a853',
+    lotFill: 'rgba(52, 168, 83, 0.14)',
+    bldgFill: '#34a853',
+    bldgStroke: '#137333',
+  },
+  other: {
+    label: 'Other Homes',
+    dot: '#9aa0a6',
+    lotFill: 'transparent',
+    bldgFill: '#e4e7ec',
+    bldgStroke: '#c8cdd5',
+  },
 };
 
-const POI_STYLE: Record<
-  VillagePoiKind,
-  { bg: string; fg: string; glyph: string; categoryLabel: string }
-> = {
-  golf: { bg: '#1e8e3e', fg: '#ffffff', glyph: '⛳', categoryLabel: 'Golf Course' },
-  beach: { bg: '#0284c7', fg: '#ffffff', glyph: '🏖', categoryLabel: 'Beach & Ferry' },
-  park: { bg: '#15803d', fg: '#ffffff', glyph: '🌲', categoryLabel: 'Park & Preserve' },
-  public: { bg: '#4f46e5', fg: '#ffffff', glyph: '🏛', categoryLabel: 'Civic & Cultural' },
-  dining: { bg: '#ea580c', fg: '#ffffff', glyph: '🍴', categoryLabel: 'Restaurant / Cafe' },
-  shop: { bg: '#9333ea', fg: '#ffffff', glyph: '🛍', categoryLabel: 'Village Store' },
+const POI_STYLE: Record<VillagePoiKind, { color: string; categoryLabel: string }> = {
+  golf: { color: '#188038', categoryLabel: 'Golf Course' },
+  beach: { color: '#1967d2', categoryLabel: 'Beach & Ferry' },
+  park: { color: '#188038', categoryLabel: 'Park & Preserve' },
+  public: { color: '#5f6368', categoryLabel: 'Civic & Cultural' },
+  dining: { color: '#e37400', categoryLabel: 'Restaurant / Cafe' },
+  shop: { color: '#1a73e8', categoryLabel: 'Village Store' },
 };
 
-function matchesFeatureSet(p: VillageParcel, active: Set<FeatureCircleKey>): boolean {
+function matchesFeatureSet(p: VillageParcel, active: Set<FeatureKey>): boolean {
   if (active.size === 0) return false;
   for (const k of active) {
     if (k === 'est4br' && !p.est4br) return false;
@@ -122,16 +151,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 }) => {
   const [bundle, setBundle] = useState<VillageParcelsBundle | null>(null);
   const [aerialImg, setAerialImg] = useState<HTMLImageElement | null>(null);
-  const [basemap, setBasemap] = useState<'satellite' | 'street'>('satellite');
+  // Default to clean Google Maps vector style!
+  const [basemap, setBasemap] = useState<'clean' | 'aerial'>('clean');
   const [catFilter, setCatFilter] = useState<ParcelStatusCategory | 'all'>('all');
-  const [circledFeatures, setCircledFeatures] = useState<Set<FeatureCircleKey>>(
-    () => new Set<FeatureCircleKey>(['est4br', 'under3m', 'notSoldRecent', 'offMarketOnly'])
-  );
-
-  // Layer visibility toggles
-  const [showStreets, setShowStreets] = useState(true);
-  const [showParksBeaches, setShowParksBeaches] = useState(true);
-  const [showDiningShops, setShowDiningShops] = useState(true);
+  // Start calm with zero feature outlines active until user clicks a chip or preset
+  const [activeFeatures, setActiveFeatures] = useState<Set<FeatureKey>>(() => new Set());
+  const [outlineTarget, setOutlineTarget] = useState<OutlineTarget>('home');
+  const [showPoiDots, setShowPoiDots] = useState(true);
 
   const [searchText, setSearchText] = useState('');
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
@@ -142,9 +168,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
   const [dossierLoading, setDossierLoading] = useState(false);
   const [dossierError, setDossierError] = useState<string | null>(null);
 
-  // Viewport transform with full 360-degree spin (bearing in degrees)
   const [view, setView] = useState({
-    zoom: 1.22,
+    zoom: 1.25,
     centerLon: -72.9408,
     centerLat: 40.7528,
     bearing: 0,
@@ -198,23 +223,15 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     return m;
   }, [listings]);
 
-  const circledIds = useMemo(() => {
+  const matchedIds = useMemo(() => {
     const out = new Set<string>();
-    if (!bundle || circledFeatures.size === 0) return out;
+    if (!bundle || activeFeatures.size === 0) return out;
     for (const p of bundle.parcels) {
       if (catFilter !== 'all' && p.cat !== catFilter) continue;
-      if (matchesFeatureSet(p, circledFeatures)) out.add(p.id);
+      if (matchesFeatureSet(p, activeFeatures)) out.add(p.id);
     }
     return out;
-  }, [bundle, circledFeatures, catFilter]);
-
-  const visiblePois = useMemo(() => {
-    if (!bundle) return [];
-    return (bundle.pois ?? []).filter((poi) => {
-      if (poi.kind === 'dining' || poi.kind === 'shop') return showDiningShops;
-      return showParksBeaches;
-    });
-  }, [bundle, showDiningShops, showParksBeaches]);
+  }, [bundle, activeFeatures, catFilter]);
 
   const searchMatches = useMemo(() => {
     if (!bundle || !searchText.trim()) return [];
@@ -238,7 +255,6 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     ? (listingById.get(selectedParcel.listingId) ?? null)
     : null;
 
-  // Rotated projection & inverse projection (sub-pixel accurate at any 0..360° bearing)
   const project = useCallback(
     (lon: number, lat: number, width: number, height: number): [number, number] => {
       const cosLat = 0.7575;
@@ -271,7 +287,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     [view]
   );
 
-  // Render full rotatable aerial Village cadastre + exterior mask + streets + POIs + circled homes
+  // Clean Google-Maps-Style Vector Renderer
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !bundle) return;
@@ -290,29 +306,44 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    const isSat = basemap === 'satellite' && Boolean(aerialImg);
+    const isAerial = basemap === 'aerial' && Boolean(aerialImg);
     const cosLat = 0.7575;
     const pxPerDegLon = (width / 0.036) * view.zoom;
     const pxPerDegLat = pxPerDegLon / cosLat;
     const rad = (view.bearing * Math.PI) / 180;
 
-    // 1. Background & Rotated Aerial Orthoimagery
-    ctx.fillStyle = isSat ? '#49505b' : '#dfe4ec';
-    ctx.fillRect(0, 0, width, height);
+    const traceRing = (ring: number[][]) => {
+      ctx.beginPath();
+      ring.forEach((pt, idx) => {
+        const [px, py] = project(pt[0], pt[1], width, height);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+    };
 
-    if (isSat && aerialImg) {
+    // 1. Base Canvas (Clean Google Maps Land or Optional Aerial)
+    if (isAerial && aerialImg) {
+      ctx.fillStyle = '#49505b';
+      ctx.fillRect(0, 0, width, height);
       ctx.save();
       ctx.translate(width / 2, height / 2);
       ctx.rotate(rad);
       const ab = bundle.aerialBounds;
-      const ix = (ab.west - view.centerLon) * pxPerDegLon;
-      const iy = -(ab.north - view.centerLat) * pxPerDegLat;
-      const iw = (ab.east - ab.west) * pxPerDegLon;
-      const ih = (ab.north - ab.south) * pxPerDegLat;
-      ctx.drawImage(aerialImg, ix, iy, iw, ih);
+      ctx.drawImage(
+        aerialImg,
+        (ab.west - view.centerLon) * pxPerDegLon,
+        -(ab.north - view.centerLat) * pxPerDegLat,
+        (ab.east - ab.west) * pxPerDegLon,
+        (ab.north - ab.south) * pxPerDegLat
+      );
       ctx.restore();
     } else {
-      // Street mode: fill Village interior warm ivory while outside stays muted grey
+      // Outside-Village Muted Gray Land
+      ctx.fillStyle = '#e3e6eb';
+      ctx.fillRect(0, 0, width, height);
+
+      // Inside-Village Clean Google Maps Alabaster Land
       ctx.save();
       ctx.beginPath();
       for (const ring of bundle.boundaryRings ?? []) {
@@ -323,12 +354,162 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         });
         ctx.closePath();
       }
-      ctx.fillStyle = '#f8f9fb';
+      ctx.fillStyle = '#f8f9fa';
       ctx.fill();
+      ctx.restore();
+
+      // Exact Great South Bay / Bellport Bay & Creek Water Polygons (#aadaff)
+      if (bundle.waterRings && bundle.waterRings.length > 0) {
+        ctx.save();
+        for (const wr of bundle.waterRings) {
+          traceRing(wr);
+          ctx.fillStyle = '#aadaff';
+          ctx.fill();
+          ctx.strokeStyle = '#8cc3f0';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    // 2. Parks, Golf Course & Subtle Property Lot Fills
+    for (const p of bundle.parcels) {
+      const dimmed = catFilter !== 'all' && p.cat !== catFilter;
+      let lotFill = CATEGORY_META[p.cat].lotFill;
+
+      if (p.cat === 'other') {
+        if (p.cls === '552') {
+          lotFill = isAerial ? 'rgba(52, 168, 83, 0.2)' : '#c8ebd0';
+        } else if (p.cls.startsWith('5') || p.cls.startsWith('9') || p.cls.startsWith('8')) {
+          lotFill = isAerial ? 'rgba(52, 168, 83, 0.18)' : '#d4f0db';
+        } else if (p.cls.startsWith('4')) {
+          lotFill = isAerial ? 'rgba(255,255,255,0.08)' : '#f1f3f5';
+        }
+      }
+
+      if (matchedIds.has(p.id) && outlineTarget === 'lot') {
+        lotFill = isAerial ? 'rgba(26, 115, 232, 0.24)' : 'rgba(26, 115, 232, 0.10)';
+      }
+
+      // Only draw subtle property lot lines when zoomed in (prevents spiderweb clutter!)
+      const showSubtleLotLines = view.zoom >= 1.55 || p.cat !== 'other';
+      if (lotFill === 'transparent' && !showSubtleLotLines) continue;
+
+      ctx.save();
+      if (dimmed) ctx.globalAlpha = 0.22;
+      for (const ring of p.rings) {
+        traceRing(ring);
+        if (lotFill !== 'transparent') {
+          ctx.fillStyle = lotFill;
+          ctx.fill();
+        }
+        if (showSubtleLotLines) {
+          ctx.strokeStyle = isAerial
+            ? 'rgba(255,255,255,0.28)'
+            : view.zoom >= 2.3
+              ? '#dadce0'
+              : 'rgba(210, 214, 220, 0.55)';
+          ctx.lineWidth = view.zoom >= 2.3 ? 0.85 : 0.55;
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
 
-    // 2. Crisp Exterior Greyed-Out Veil outside Incorporated Bellport Village (evenodd mask!)
+    // 3. Google-Maps-Style Cased Roads (Casing Pass -> Clean White Fill Pass)
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const roadScale = Math.max(0.85, Math.min(2.6, Math.pow(view.zoom, 0.65)));
+
+    // Pass A: Road Casing
+    for (const st of bundle.streets) {
+      const isArterial = /Main St|South Country/i.test(st.name);
+      const isCollector = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(
+        st.name
+      );
+      ctx.strokeStyle = isAerial
+        ? 'rgba(15, 23, 42, 0.35)'
+        : isArterial
+          ? '#e5c585'
+          : '#dadce0';
+      ctx.lineWidth = (isArterial ? 7.2 : isCollector ? 5.2 : 3.6) * roadScale;
+      for (const seg of st.segments) {
+        if (seg.length < 2) continue;
+        ctx.beginPath();
+        seg.forEach((pt, idx) => {
+          const [px, py] = project(pt[0], pt[1], width, height);
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      }
+    }
+
+    // Pass B: Crisp Road Fill
+    for (const st of bundle.streets) {
+      const isArterial = /Main St|South Country/i.test(st.name);
+      const isCollector = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(
+        st.name
+      );
+      ctx.strokeStyle = isAerial
+        ? 'rgba(255, 255, 255, 0.42)'
+        : isArterial
+          ? '#fef3c7'
+          : '#ffffff';
+      ctx.lineWidth = (isArterial ? 5.4 : isCollector ? 3.8 : 2.3) * roadScale;
+      for (const seg of st.segments) {
+        if (seg.length < 2) continue;
+        ctx.beginPath();
+        seg.forEach((pt, idx) => {
+          const [px, py] = project(pt[0], pt[1], width, height);
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // 4. Faded Outside-Village Buildings + Crisp Inside-Village 2D Home Shapes From Above
+    if (!isAerial && bundle.outsideBldgs && view.zoom >= 1.35) {
+      ctx.save();
+      ctx.fillStyle = '#d5d9df';
+      for (const bRing of bundle.outsideBldgs) {
+        traceRing(bRing);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    for (const p of bundle.parcels) {
+      if (!p.bldgs || p.bldgs.length === 0) continue;
+      const dimmed = catFilter !== 'all' && p.cat !== catFilter;
+      const meta = CATEGORY_META[p.cat];
+      const isMatchedHome = matchedIds.has(p.id) && outlineTarget === 'home';
+
+      ctx.save();
+      if (dimmed) ctx.globalAlpha = 0.2;
+      ctx.fillStyle = isMatchedHome
+        ? p.cat === 'other'
+          ? '#d2e3fc'
+          : meta.bldgFill
+        : isAerial && p.cat === 'other'
+          ? 'rgba(255,255,255,0.22)'
+          : meta.bldgFill;
+      ctx.strokeStyle = isAerial && p.cat === 'other' ? 'rgba(255,255,255,0.45)' : meta.bldgStroke;
+      ctx.lineWidth = p.cat === 'other' ? 0.65 : 1.1;
+
+      for (const bRing of p.bldgs) {
+        traceRing(bRing);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 5. Exterior Greyed-Out Veil Outside Incorporated Bellport Village Border (ensures roads/edges outside stay muted!)
     if (bundle.boundaryRings && bundle.boundaryRings.length > 0) {
       ctx.save();
       ctx.beginPath();
@@ -341,238 +522,190 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         });
         ctx.closePath();
       }
-      ctx.fillStyle = isSat ? 'rgba(58, 64, 74, 0.56)' : 'rgba(148, 158, 172, 0.42)';
+      ctx.fillStyle = isAerial ? 'rgba(58, 64, 74, 0.56)' : 'rgba(216, 221, 228, 0.52)';
       ctx.fill('evenodd');
-      ctx.restore();
-    }
 
-    // 3. Draw all 1,213 Surveyor Property Lines & Status Fills
-    for (const p of bundle.parcels) {
-      const dimmed = catFilter !== 'all' && p.cat !== catFilter;
-      let fill = CATEGORY_META[p.cat].fill;
-      let stroke = CATEGORY_META[p.cat].stroke;
-      let alpha = dimmed ? 0.14 : isSat ? 0.72 : 0.86;
-      let lw = p.cat === 'other' ? (view.zoom > 2 ? 0.9 : 0.65) : 1.6;
-
-      if (p.cat === 'other') {
-        if (p.cls === '552') {
-          // 137-acre Bellport Country Club Golf Course
-          fill = isSat ? 'rgba(52, 168, 83, 0.24)' : '#bbe6c5';
-          stroke = isSat ? '#81c995' : '#34a853';
-          alpha = dimmed ? 0.15 : 1;
-          lw = 1.6;
-        } else if (p.cls.startsWith('5') || p.cls.startsWith('9') || p.cls.startsWith('8')) {
-          // Parks, Preserves & Waterfront public parcels
-          fill = isSat ? 'rgba(52, 168, 83, 0.22)' : '#cdebd4';
-          stroke = isSat ? 'rgba(168, 218, 181, 0.7)' : '#68b87d';
-          alpha = dimmed ? 0.12 : 1;
-        } else if (p.cls.startsWith('4')) {
-          // Village Main Street commercial buildings
-          fill = isSat ? 'rgba(232, 240, 254, 0.20)' : '#e8eef7';
-          stroke = isSat ? 'rgba(255, 255, 255, 0.55)' : '#94a3b8';
-          alpha = dimmed ? 0.12 : 1;
-        } else {
-          // Residential Village homes
-          fill = isSat ? 'rgba(255, 255, 255, 0.10)' : '#e6ebf2';
-          stroke = isSat ? 'rgba(255, 255, 255, 0.44)' : '#9aa5b5';
-          alpha = dimmed ? 0.12 : 1;
-        }
-      }
-
-      if (p.id === selectedParcelId) {
-        stroke = '#00e5ff';
-        lw = 3;
-        alpha = 0.92;
-      } else if (hoveredParcel?.id === p.id) {
-        stroke = '#ffffff';
-        lw = 2.2;
-        alpha = 0.9;
-      }
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = fill;
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lw;
-
-      for (const ring of p.rings) {
-        ctx.beginPath();
-        ring.forEach((pt, idx) => {
-          const [px, py] = project(pt[0], pt[1], width, height);
-          if (idx === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        });
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // 4. Street Centerlines
-    if (showStreets) {
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      for (const st of bundle.streets) {
-        const isMajor = /Main St|Station Rd|Country Club|Bellport Ln|Howells/i.test(st.name);
-        ctx.strokeStyle = isSat
-          ? isMajor
-            ? 'rgba(255,255,255,0.48)'
-            : 'rgba(255,255,255,0.24)'
-          : isMajor
-            ? '#ffffff'
-            : 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = isSat ? (isMajor ? 2.1 : 1.05) : isMajor ? 3.5 : 1.8;
-        for (const seg of st.segments) {
-          if (seg.length < 2) continue;
-          ctx.beginPath();
-          seg.forEach((pt, idx) => {
-            const [px, py] = project(pt[0], pt[1], width, height);
-            if (idx === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          });
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
-    // 5. Bold Incorporated Bellport Village Border Line
-    if (bundle.boundaryRings) {
-      ctx.save();
+      // Clean Village municipal border line
       for (const ring of bundle.boundaryRings) {
-        ctx.beginPath();
-        ring.forEach((pt, idx) => {
-          const [px, py] = project(pt[0], pt[1], width, height);
-          if (idx === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        });
-        ctx.closePath();
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)';
-        ctx.lineWidth = 4.5;
-        ctx.stroke();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([7, 4]);
+        traceRing(ring);
+        ctx.strokeStyle = isAerial ? '#ffffff' : '#80868b';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([6, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
       ctx.restore();
     }
 
-    // 6. High-Contrast Target Circles Around Feature-Matched Homes
-    if (circledIds.size > 0) {
+    // 6. Feature-Matched Outlines (NO CIRCLES — Crisp Line Around Home Shape or Property Lot!)
+    if (matchedIds.size > 0) {
+      ctx.save();
+      ctx.lineJoin = 'round';
       for (const p of bundle.parcels) {
-        if (!circledIds.has(p.id)) continue;
-        const [cx, cy] = project(p.lon, p.lat, width, height);
-        if (cx < -24 || cx > width + 24 || cy < -24 || cy > height + 24) continue;
-        const r = Math.max(7.5, Math.min(16, 6.8 * Math.sqrt(view.zoom)));
+        if (!matchedIds.has(p.id)) continue;
+        const targetRings =
+          outlineTarget === 'home' && p.bldgs && p.bldgs.length > 0 ? [p.bldgs[0]] : p.rings;
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, r + 2.5, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.8)';
-        ctx.lineWidth = 3.6;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
-        ctx.strokeStyle = '#00e5ff';
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
+        for (const r of targetRings) {
+          traceRing(r);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3.6;
+          ctx.stroke();
+          ctx.strokeStyle = '#1a73e8';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+        }
       }
+      ctx.restore();
     }
 
-    // 7. Upright Collision-Free Street Name Labels (Major at overview, ALL 132 streets on zoom!)
-    if (showStreets && bundle.streetLabels) {
-      const placedBoxes: Array<[number, number, number, number]> = [];
-      ctx.font = '600 10.5px system-ui, -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+    // 7. Hovered & Selected Property Outlines (Exact Lot + Home Contour, Zero Circles)
+    for (const [parcel, color, lw] of [
+      [hoveredParcel, '#3c4043', 1.6],
+      [selectedParcel, '#1a73e8', 2.4],
+    ] as Array<[VillageParcel | null, string, number]>) {
+      if (!parcel) continue;
+      ctx.save();
+      ctx.lineJoin = 'round';
+      for (const ring of parcel.rings) {
+        traceRing(ring);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lw;
+        ctx.stroke();
+      }
+      if (parcel.bldgs && parcel.bldgs[0]) {
+        traceRing(parcel.bldgs[0]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lw;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
-      const ordered = [...bundle.streetLabels].sort((a, b) => Number(b.major) - Number(a.major));
-      for (const sl of ordered) {
-        if (!sl.major && view.zoom < 1.75) continue;
-        const [sx, sy] = project(sl.lon, sl.lat, width, height);
-        if (sx < 36 || sx > width - 36 || sy < 18 || sy > height - 18) continue;
+    // 8. Clean Google-Maps Inline Angled Road Labels (No Dark Pill Boxes!)
+    const placedBoxes: Array<[number, number, number, number]> = [];
+    const canPlace = (cx: number, cy: number, w: number, h: number): boolean => {
+      if (cx < 36 || cx > width - 36 || cy < 20 || cy > height - 20) return false;
+      const b: [number, number, number, number] = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
+      if (
+        placedBoxes.some(
+          (x) => !(b[2] < x[0] || b[0] > x[2] || b[3] < x[1] || b[1] > x[3])
+        )
+      ) {
+        return false;
+      }
+      placedBoxes.push(b);
+      return true;
+    };
 
-        const tw = ctx.measureText(sl.name).width + 10;
-        const th = 15;
-        const box: [number, number, number, number] = [
-          sx - tw / 2 - 6,
-          sy - th / 2 - 4,
-          sx + tw / 2 + 6,
-          sy + th / 2 + 4,
-        ];
-        const collides = placedBoxes.some(
-          (b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3])
+    ctx.save();
+    ctx.font = '500 10.5px "Google Sans Text", Roboto, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const priorityStreets = [...bundle.streets].sort((a, b) => {
+      const aMaj = /Main St|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit/i.test(
+        a.name
+      );
+      const bMaj = /Main St|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit/i.test(
+        b.name
+      );
+      return Number(bMaj) - Number(aMaj);
+    });
+
+    for (const st of priorityStreets) {
+      const isPrimary =
+        /Main St|Station Rd|Bellport Ln|Country Club|Howells|Shore Rd|Browns Ln|Circuit/i.test(
+          st.name
         );
-        if (collides) continue;
-        placedBoxes.push(box);
+      if (!isPrimary && view.zoom < 1.95) continue;
 
-        ctx.fillStyle = isSat ? 'rgba(15, 23, 42, 0.74)' : 'rgba(255, 255, 255, 0.88)';
-        ctx.beginPath();
-        ctx.roundRect(sx - tw / 2, sy - th / 2, tw, th, 6);
-        ctx.fill();
-        ctx.fillStyle = isSat ? '#f1f5f9' : '#1e293b';
-        ctx.fillText(sl.name, sx, sy + 0.5);
-      }
+      const longest = st.segments.reduce(
+        (best, cur) => (cur.length > best.length ? cur : best),
+        st.segments[0] ?? []
+      );
+      if (longest.length < 2) continue;
+      const midIdx = Math.floor(longest.length / 2);
+      const pA = longest[Math.max(0, midIdx - 1)];
+      const pB = longest[Math.min(longest.length - 1, midIdx + 1)];
+      const [ax, ay] = project(pA[0], pA[1], width, height);
+      const [bx, by] = project(pB[0], pB[1], width, height);
+      const segPx = Math.hypot(bx - ax, by - ay);
+      const textW = ctx.measureText(st.name).width;
+      if (segPx < textW * 0.7 && view.zoom < 2.8) continue;
+
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      if (!canPlace(mx, my, textW + 26, 22)) continue;
+
+      let angle = Math.atan2(by - ay, bx - ax);
+      if (angle > Math.PI / 2) angle -= Math.PI;
+      if (angle < -Math.PI / 2) angle += Math.PI;
+
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate(angle);
+      ctx.lineWidth = 3.2;
+      ctx.strokeStyle = isAerial ? 'rgba(15, 23, 42, 0.85)' : '#ffffff';
+      ctx.strokeText(st.name, 0, 0);
+      ctx.fillStyle = isAerial ? '#f1f5f9' : '#5f6368';
+      ctx.fillText(st.name, 0, 0);
+      ctx.restore();
     }
+    ctx.restore();
 
-    // 8. Golf Course, Parks, Beaches, Public Spaces, Restaurants & Stores Pins
-    for (const poi of visiblePois) {
-      const [px, py] = project(poi.lon, poi.lat, width, height);
-      if (px < -20 || px > width + 20 || py < -20 || py > height + 20) continue;
-      const st = POI_STYLE[poi.kind];
-      const isSelected = selectedPoi?.id === poi.id || hoveredPoi?.id === poi.id;
-      const pinR = isSelected ? 11.5 : 9.5;
-
-      ctx.beginPath();
-      ctx.arc(px, py, pinR, 0, Math.PI * 2);
-      ctx.fillStyle = st.bg;
-      ctx.fill();
-      ctx.lineWidth = isSelected ? 2.6 : 1.8;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-
-      ctx.font = '10px system-ui, sans-serif';
+    // 9. Calm Google-Maps-Style POI Dots & Progressive Labels
+    if (showPoiDots && bundle.pois) {
+      ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = st.fg;
-      ctx.fillText(st.glyph, px, py + 0.5);
 
-      const showPoiLabel =
-        isSelected ||
-        poi.kind === 'golf' ||
-        poi.kind === 'beach' ||
-        (poi.kind === 'park' && view.zoom >= 1.2) ||
-        view.zoom >= 2.15;
-
-      if (showPoiLabel) {
-        ctx.font = '600 10.5px system-ui, sans-serif';
-        const lw = ctx.measureText(poi.name).width + 10;
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.84)';
-        ctx.beginPath();
-        ctx.roundRect(px - lw / 2, py + pinR + 3, lw, 16, 6);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(poi.name, px, py + pinR + 11);
+      // Water label for Bellport Bay
+      const [bayX, bayY] = project(-72.9415, 40.7425, width, height);
+      if (canPlace(bayX, bayY, 90, 20)) {
+        ctx.font = 'italic 500 11.5px "Google Sans Text", Georgia, serif';
+        ctx.fillStyle = isAerial ? '#bae6fd' : '#3b78a8';
+        ctx.fillText('Bellport Bay', bayX, bayY);
       }
-    }
 
-    // 9. Selected Parcel Highlight Ring
-    if (selectedParcel) {
-      const [sx, sy] = project(selectedParcel.lon, selectedParcel.lat, width, height);
-      ctx.beginPath();
-      ctx.arc(sx, sy, 12, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(sx, sy, 12, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ea4335';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
+      for (const poi of bundle.pois) {
+        const isMainLandmark =
+          poi.id === 'poi-golf' ||
+          poi.id === 'poi-ferry' ||
+          poi.id === 'poi-mothers-beach' ||
+          poi.id === 'poi-osborn-park' ||
+          poi.id === 'poi-gateway';
+
+        // Hide crowded Main St shop/restaurant dots until zoomed in slightly (>= 1.45x), except hovered/selected
+        const isActivePoi = selectedPoi?.id === poi.id || hoveredPoi?.id === poi.id;
+        if (!isMainLandmark && !isActivePoi && view.zoom < 1.45) continue;
+
+        const [px, py] = project(poi.lon, poi.lat, width, height);
+        if (px < 10 || px > width - 10 || py < 10 || py > height - 10) continue;
+        const st = POI_STYLE[poi.kind];
+        const r = isActivePoi ? 6.5 : isMainLandmark ? 5 : 4;
+
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fillStyle = st.color;
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+
+        const wantLabel =
+          isActivePoi || isMainLandmark || (view.zoom >= 2.35 && canPlace(px, py + 13, 110, 16));
+        if (wantLabel && (isActivePoi || canPlace(px, py + 13, 120, 18))) {
+          const shortName = poi.name.replace(' & 18-Hole Golf Course', '').replace('Whalehouse Point ', '');
+          ctx.font = '500 10.5px "Google Sans Text", Roboto, system-ui, sans-serif';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = isAerial ? 'rgba(15, 23, 42, 0.85)' : '#ffffff';
+          ctx.strokeText(shortName, px, py + r + 8);
+          ctx.fillStyle = isAerial ? '#ffffff' : st.color;
+          ctx.fillText(shortName, px, py + r + 8);
+        }
+      }
+      ctx.restore();
     }
 
     ctx.restore();
@@ -581,10 +714,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     aerialImg,
     basemap,
     catFilter,
-    circledIds,
-    showStreets,
-    visiblePois,
-    selectedParcelId,
+    matchedIds,
+    outlineTarget,
+    showPoiDots,
     selectedParcel,
     selectedPoi,
     hoveredParcel,
@@ -595,13 +727,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
   const findPoiAtScreenPoint = (clientX: number, clientY: number): VillagePoi | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return null;
+    if (!canvas || !bundle || !showPoiDots) return null;
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    for (const poi of visiblePois) {
+    for (const poi of bundle.pois ?? []) {
       const [px, py] = project(poi.lon, poi.lat, rect.width, rect.height);
-      if (Math.hypot(px - x, py - y) <= 12) return poi;
+      if (Math.hypot(px - x, py - y) <= 10) return poi;
     }
     return null;
   };
@@ -610,10 +742,12 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     const canvas = canvasRef.current;
     if (!canvas || !bundle) return null;
     const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const [lon, lat] = unproject(x, y, rect.width, rect.height);
-
+    const [lon, lat] = unproject(
+      clientX - rect.left,
+      clientY - rect.top,
+      rect.width,
+      rect.height
+    );
     for (const p of bundle.parcels) {
       for (const ring of p.rings) {
         if (pointInRing(lon, lat, ring)) return p;
@@ -632,11 +766,10 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     const [lonBefore, latBefore] = unproject(mx, my, rect.width, rect.height);
 
     const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
-    const nextZoom = Math.max(0.85, Math.min(10, view.zoom * factor));
+    const nextZoom = Math.max(0.9, Math.min(10, view.zoom * factor));
 
-    const cosLat = 0.7575;
     const pxPerDegLon = (rect.width / 0.036) * nextZoom;
-    const pxPerDegLat = pxPerDegLon / cosLat;
+    const pxPerDegLat = pxPerDegLon / 0.7575;
     const rx = mx - rect.width / 2;
     const ry = my - rect.height / 2;
     const rad = (-view.bearing * Math.PI) / 180;
@@ -680,9 +813,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         return;
       }
 
-      const cosLat = 0.7575;
       const pxPerDegLon = (rect.width / 0.036) * view.zoom;
-      const pxPerDegLat = pxPerDegLon / cosLat;
+      const pxPerDegLat = pxPerDegLon / 0.7575;
       const rad = (-view.bearing * Math.PI) / 180;
       const dxUnrot = dxScreen * Math.cos(rad) - dyScreen * Math.sin(rad);
       const dyUnrot = dxScreen * Math.sin(rad) + dyScreen * Math.cos(rad);
@@ -722,8 +854,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
   };
 
-  const toggleFeatureChip = (k: FeatureCircleKey) => {
-    setCircledFeatures((prev) => {
+  const toggleFeatureChip = (k: FeatureKey) => {
+    setActiveFeatures((prev) => {
       const next = new Set(prev);
       if (next.has(k)) next.delete(k);
       else next.add(k);
@@ -731,9 +863,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     });
   };
 
-  const applyPreset = (keys: FeatureCircleKey[]) => {
+  const applyPreset = (keys: FeatureKey[]) => {
     setCatFilter('all');
-    setCircledFeatures(new Set(keys));
+    setActiveFeatures(new Set(keys));
   };
 
   const focusParcel = (p: VillageParcel) => {
@@ -742,7 +874,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     setSearchText('');
     setView((prev) => ({
       ...prev,
-      zoom: Math.max(prev.zoom, 3.3),
+      zoom: Math.max(prev.zoom, 3.4),
       centerLon: p.lon,
       centerLat: p.lat,
     }));
@@ -780,16 +912,16 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     return (
       <section className="results-band">
         <div className="container">
-          <p style={{ color: 'var(--ink-2)' }}>Loading Bellport Village aerial parcel map…</p>
+          <p style={{ color: 'var(--ink-2)' }}>Loading clean Bellport Village map…</p>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="results-band" aria-label="Bellport Village Aerial Property Map">
-      <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Header & 1-Click Presets */}
+    <section className="results-band" aria-label="Bellport Village Property Map">
+      <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Clean Editorial Header */}
         <div
           style={{
             display: 'flex',
@@ -800,60 +932,52 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           }}
         >
           <div>
-            <span className="eyebrow">Rotatable Aerial Cadastre · SWIS 472203</span>
-            <h1 style={{ fontSize: 'var(--fs-h2)', margin: '4px 0 6px' }}>
-              Every property in Bellport Village, mapped.
+            <span className="eyebrow">Bellport Village Map · 1,213 Properties</span>
+            <h1 style={{ fontSize: 'var(--fs-h2)', margin: '4px 0 4px' }}>
+              Every home in Bellport Village, mapped cleanly.
             </h1>
-            <p style={{ color: 'var(--ink-2)', maxWidth: '68ch', margin: 0 }}>
-              Spin 360° (<strong>Shift+Drag</strong> or use the compass dial), zoom into any lane,
-              and click any of the <strong>{bundle.totalParcels.toLocaleString()}</strong> Village
-              lots, parks, beaches, the golf course, or Main Street restaurants and stores. Areas
-              outside the Village border are greyed out.
+            <p style={{ color: 'var(--ink-2)', maxWidth: '64ch', margin: 0, fontSize: 14 }}>
+              Zoom in to see individual house footprints, lot lines, and Main Street spots, or{' '}
+              <strong>Shift+Drag</strong> to spin 360°. Select any feature below to trace matching
+              homes or lots.
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="pill-toggle is-active"
+              className={`pill-toggle ${activeFeatures.has('est4br') && activeFeatures.has('under3m') ? 'is-active' : ''}`}
               onClick={() =>
                 applyPreset(['est4br', 'under3m', 'notSoldRecent', 'offMarketOnly'])
               }
             >
               <Sparkles size={14} />
-              <span>Preset: 4+ BR · &lt;$3M · Not Sold Recently</span>
+              <span>4+ BR · &lt;$3M · Not Sold Recently</span>
             </button>
             <button
               type="button"
               className="pill-toggle"
               onClick={() => applyPreset(['historic', 'pool', 'under3m'])}
             >
-              <span>Historic Lanes + Pool (&lt;$3M)</span>
+              <span>Historic Lanes + Pool</span>
             </button>
-            <button
-              type="button"
-              className="pill-toggle"
-              onClick={() => applyPreset(['absentee', 'halfAcre'])}
-            >
-              <span>NYC / 2nd-Home Owners (0.5+ ac)</span>
-            </button>
-            {circledFeatures.size > 0 && (
+            {activeFeatures.size > 0 && (
               <button
                 type="button"
                 className="icon-btn"
-                onClick={() => setCircledFeatures(new Set())}
+                onClick={() => setActiveFeatures(new Set())}
               >
                 <RotateCcw size={13} />
-                <span>Clear Circles</span>
+                <span>Clear Highlights</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Status Color Legend + Feature Circling + Map Layer Toggles */}
+        {/* Calm Two-Row Toolbar: Status Legend + Feature Outline Selector */}
         <div
           style={{
-            padding: 16,
+            padding: '12px 16px',
             borderRadius: 'var(--radius)',
             background: 'var(--surface)',
             border: '1px solid var(--line)',
@@ -875,6 +999,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               <button
                 type="button"
                 className={`pill-toggle ${catFilter === 'all' ? 'is-active' : ''}`}
+                style={{ height: 30, fontSize: 12 }}
                 onClick={() => setCatFilter('all')}
               >
                 All ({bundle.totalParcels.toLocaleString()})
@@ -885,15 +1010,15 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                     key={cat}
                     type="button"
                     className={`pill-toggle ${catFilter === cat ? 'is-active' : ''}`}
+                    style={{ height: 30, fontSize: 12 }}
                     onClick={() => setCatFilter(catFilter === cat ? 'all' : cat)}
                   >
                     <span
                       style={{
-                        width: 10,
-                        height: 10,
+                        width: 9,
+                        height: 9,
                         borderRadius: 999,
-                        background: CATEGORY_META[cat].fill,
-                        border: '1px solid rgba(0,0,0,0.25)',
+                        background: CATEGORY_META[cat].dot,
                         display: 'inline-block',
                       }}
                     />
@@ -905,10 +1030,30 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               )}
             </div>
 
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
-              {circledIds.size > 0
-                ? `◎ ${circledIds.size} Village ${circledIds.size === 1 ? 'home' : 'homes'} circled`
-                : 'Click features below to circle homes'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+              {matchedIds.size > 0 && (
+                <strong style={{ color: 'var(--accent)' }}>
+                  {matchedIds.size} {matchedIds.size === 1 ? 'property' : 'properties'} outlined
+                </strong>
+              )}
+              <div className="segmented-tabs" role="group" aria-label="Outline geometry">
+                <button
+                  type="button"
+                  className={`segmented-tabs__tab ${outlineTarget === 'home' ? 'is-active' : ''}`}
+                  style={{ padding: '4px 10px', fontSize: 11 }}
+                  onClick={() => setOutlineTarget('home')}
+                >
+                  Outline: Home Shape
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-tabs__tab ${outlineTarget === 'lot' ? 'is-active' : ''}`}
+                  style={{ padding: '4px 10px', fontSize: 11 }}
+                  onClick={() => setOutlineTarget('lot')}
+                >
+                  Outline: Lot Line
+                </button>
+              </div>
             </div>
           </div>
 
@@ -917,85 +1062,46 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               display: 'flex',
               gap: 6,
               flexWrap: 'wrap',
-              paddingTop: 10,
+              paddingTop: 8,
               borderTop: '1px solid var(--line)',
               alignItems: 'center',
             }}
           >
-            <span style={{ fontSize: 12, color: 'var(--ink-2)', marginRight: 4 }}>
-              Circle homes with:
+            <span style={{ fontSize: 12, color: 'var(--ink-2)', marginRight: 2 }}>
+              Outline homes with:
             </span>
             {FEATURE_CHIPS.map((fc) => (
               <button
                 key={fc.key}
                 type="button"
-                className={`pill-toggle ${circledFeatures.has(fc.key) ? 'is-active' : ''}`}
-                style={{ height: 29, fontSize: 12, padding: '0 10px' }}
+                className={`pill-toggle ${activeFeatures.has(fc.key) ? 'is-active' : ''}`}
+                style={{ height: 28, fontSize: 12, padding: '0 10px' }}
                 onClick={() => toggleFeatureChip(fc.key)}
               >
                 {fc.label}
               </button>
             ))}
           </div>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              flexWrap: 'wrap',
-              paddingTop: 8,
-              borderTop: '1px solid var(--line)',
-              alignItems: 'center',
-              fontSize: 12,
-            }}
-          >
-            <span style={{ color: 'var(--ink-2)' }}>Map overlays:</span>
-            <button
-              type="button"
-              className={`pill-toggle ${showStreets ? 'is-active' : ''}`}
-              style={{ height: 28, fontSize: 12 }}
-              onClick={() => setShowStreets((v) => !v)}
-            >
-              All 132 Street Names
-            </button>
-            <button
-              type="button"
-              className={`pill-toggle ${showParksBeaches ? 'is-active' : ''}`}
-              style={{ height: 28, fontSize: 12 }}
-              onClick={() => setShowParksBeaches((v) => !v)}
-            >
-              ⛳ Golf, Parks, Beaches &amp; Civic
-            </button>
-            <button
-              type="button"
-              className={`pill-toggle ${showDiningShops ? 'is-active' : ''}`}
-              style={{ height: 28, fontSize: 12 }}
-              onClick={() => setShowDiningShops((v) => !v)}
-            >
-              🍴 Restaurants &amp; Village Stores
-            </button>
-          </div>
         </div>
 
-        {/* Interactive Aerial Map + Right Dossier Panel */}
+        {/* Clean Google-Maps Canvas + Property Dossier */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) 375px',
+            gridTemplateColumns: 'minmax(0, 1fr) 365px',
             gap: 18,
             alignItems: 'start',
           }}
           className="village-map-grid"
         >
-          {/* Rotatable Aerial Canvas */}
           <div
             style={{
               position: 'relative',
               borderRadius: 'var(--radius)',
               overflow: 'hidden',
               border: '1px solid var(--line)',
-              background: '#49505b',
-              height: 640,
+              background: '#e3e6eb',
+              height: 620,
             }}
           >
             <canvas
@@ -1013,29 +1119,29 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               }}
             />
 
-            {/* Top-Left Address Jump */}
-            <div style={{ position: 'absolute', top: 12, left: 12, width: 270, zIndex: 5 }}>
+            {/* Top-Left Google-Maps-Style Search Box */}
+            <div style={{ position: 'absolute', top: 12, left: 12, width: 260, zIndex: 5 }}>
               <div style={{ position: 'relative' }}>
                 <Search
                   size={14}
-                  style={{ position: 'absolute', left: 11, top: 11, color: 'var(--ink-2)' }}
+                  style={{ position: 'absolute', left: 12, top: 11, color: '#5f6368' }}
                 />
                 <input
                   type="search"
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Find any Bellport street or address…"
+                  placeholder="Search Bellport address…"
                   style={{
                     width: '100%',
                     height: 36,
-                    paddingLeft: 32,
+                    paddingLeft: 34,
                     paddingRight: 10,
                     borderRadius: 999,
-                    border: '1px solid var(--line)',
-                    background: 'var(--surface)',
-                    color: 'var(--ink)',
+                    border: '1px solid #dadce0',
+                    background: '#ffffff',
+                    color: '#202124',
                     fontSize: 12,
-                    boxShadow: 'var(--shadow-1)',
+                    boxShadow: '0 2px 6px rgba(60,64,67,0.15)',
                   }}
                 />
               </div>
@@ -1044,9 +1150,9 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   style={{
                     marginTop: 6,
                     borderRadius: 14,
-                    background: 'var(--surface)',
-                    border: '1px solid var(--line)',
-                    boxShadow: 'var(--shadow-2)',
+                    background: '#ffffff',
+                    border: '1px solid #dadce0',
+                    boxShadow: '0 4px 14px rgba(60,64,67,0.18)',
                     overflow: 'hidden',
                   }}
                 >
@@ -1061,23 +1167,23 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                         width: '100%',
                         padding: '8px 12px',
                         border: 'none',
-                        borderBottom: '1px solid var(--line)',
+                        borderBottom: '1px solid #f1f3f4',
                         background: 'transparent',
-                        color: 'var(--ink)',
+                        color: '#202124',
                         fontSize: 12,
                         cursor: 'pointer',
                         textAlign: 'left',
                       }}
                     >
                       <strong>{m.addr}</strong>
-                      <span style={{ color: 'var(--ink-2)' }}>{m.acres} ac</span>
+                      <span style={{ color: '#5f6368' }}>{m.acres} ac</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Top-Right Basemap, 360° Spin & Zoom Control Pod */}
+            {/* Quiet Top-Right Controls */}
             <div
               style={{
                 position: 'absolute',
@@ -1089,132 +1195,139 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 alignItems: 'flex-end',
               }}
             >
-              <button
-                type="button"
-                className="icon-btn"
-                style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-1)' }}
-                onClick={() => setBasemap((b) => (b === 'satellite' ? 'street' : 'satellite'))}
-              >
-                <Layers size={14} />
-                <span>{basemap === 'satellite' ? 'Aerial View (Switch to Street)' : 'Street View (Switch to Aerial)'}</span>
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    background: '#ffffff',
+                    color: '#202124',
+                    borderColor: '#dadce0',
+                    boxShadow: '0 1px 4px rgba(60,64,67,0.15)',
+                    height: 32,
+                    fontSize: 12,
+                  }}
+                  onClick={() => setShowPoiDots((v) => !v)}
+                >
+                  <span>{showPoiDots ? 'Places: On' : 'Places: Off'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    background: '#ffffff',
+                    color: '#202124',
+                    borderColor: '#dadce0',
+                    boxShadow: '0 1px 4px rgba(60,64,67,0.15)',
+                    height: 32,
+                    fontSize: 12,
+                  }}
+                  onClick={() => setBasemap((b) => (b === 'clean' ? 'aerial' : 'clean'))}
+                >
+                  <Layers size={13} />
+                  <span>{basemap === 'clean' ? 'Aerial' : 'Clean Map'}</span>
+                </button>
+              </div>
 
-              {/* Spin & Zoom Controls */}
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 5,
-                  background: 'var(--surface)',
-                  padding: 8,
-                  borderRadius: 18,
-                  border: '1px solid var(--line)',
-                  boxShadow: 'var(--shadow-2)',
+                  gap: 4,
+                  background: '#ffffff',
+                  padding: 6,
+                  borderRadius: 16,
+                  border: '1px solid #dadce0',
+                  boxShadow: '0 2px 6px rgba(60,64,67,0.15)',
                   alignItems: 'center',
                 }}
               >
-                <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Zoom in"
+                  style={{ color: '#202124', borderColor: 'transparent', width: 30, height: 30 }}
+                  onClick={() => setView((v) => ({ ...v, zoom: Math.min(10, v.zoom * 1.35) }))}
+                >
+                  <Plus size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Zoom out"
+                  style={{ color: '#202124', borderColor: 'transparent', width: 30, height: 30 }}
+                  onClick={() => setView((v) => ({ ...v, zoom: Math.max(0.9, v.zoom / 1.35) }))}
+                >
+                  <Minus size={15} />
+                </button>
+                <div style={{ width: '100%', height: 1, background: '#f1f3f4' }} />
+                <div style={{ display: 'flex', gap: 2 }}>
                   <button
                     type="button"
                     className="icon-btn"
-                    title="Spin counter-clockwise 45°"
+                    title="Spin left 45°"
+                    style={{ color: '#202124', borderColor: 'transparent', width: 28, height: 28 }}
                     onClick={() =>
                       setView((v) => ({ ...v, bearing: (v.bearing - 45 + 360) % 360 }))
                     }
                   >
-                    <RotateCcw size={14} />
+                    <RotateCcw size={13} />
                   </button>
                   <button
                     type="button"
                     className="icon-btn"
-                    title="Reset North (0°)"
-                    onClick={() => setView((v) => ({ ...v, bearing: 0 }))}
-                    style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700 }}
-                  >
-                    N {view.bearing}°
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Spin clockwise 45°"
+                    title="Spin right 45°"
+                    style={{ color: '#202124', borderColor: 'transparent', width: 28, height: 28 }}
                     onClick={() => setView((v) => ({ ...v, bearing: (v.bearing + 45) % 360 }))}
                   >
-                    <RotateCw size={14} />
+                    <RotateCw size={13} />
                   </button>
                 </div>
-
-                <input
-                  type="range"
-                  min={0}
-                  max={359}
-                  value={view.bearing}
-                  aria-label="Spin map 0 to 360 degrees"
-                  onChange={(e) =>
-                    setView((v) => ({ ...v, bearing: Number(e.target.value) }))
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Reset North & Overview"
+                  style={{
+                    color: '#202124',
+                    borderColor: 'transparent',
+                    height: 26,
+                    fontSize: 11,
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                  onClick={() =>
+                    setView({ zoom: 1.25, centerLon: -72.9408, centerLat: 40.7528, bearing: 0 })
                   }
-                  style={{ width: 108 }}
-                />
-
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label="Zoom in"
-                    onClick={() => setView((v) => ({ ...v, zoom: Math.min(10, v.zoom * 1.35) }))}
-                  >
-                    <Plus size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label="Zoom out"
-                    onClick={() =>
-                      setView((v) => ({ ...v, zoom: Math.max(0.85, v.zoom / 1.35) }))
-                    }
-                  >
-                    <Minus size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Reset full Village view"
-                    onClick={() =>
-                      setView({ zoom: 1.22, centerLon: -72.9408, centerLat: 40.7528, bearing: 0 })
-                    }
-                  >
-                    <Compass size={15} />
-                  </button>
-                </div>
+                >
+                  <Compass size={13} />
+                  <span>{view.bearing ? `${view.bearing}°` : 'N'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Bottom-Left Hover Readout */}
+            {/* Subtle Hover Readout */}
             {(hoveredPoi || hoveredParcel) && (
               <div
                 style={{
                   position: 'absolute',
                   left: 12,
                   bottom: 12,
-                  padding: '8px 12px',
-                  borderRadius: 14,
-                  background: 'var(--surface)',
-                  border: '1px solid var(--line)',
-                  boxShadow: 'var(--shadow-2)',
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  background: '#ffffff',
+                  color: '#202124',
+                  border: '1px solid #dadce0',
+                  boxShadow: '0 2px 6px rgba(60,64,67,0.16)',
                   fontSize: 12,
                   pointerEvents: 'none',
                 }}
               >
                 {hoveredPoi ? (
                   <>
-                    <strong>
-                      {POI_STYLE[hoveredPoi.kind].glyph} {hoveredPoi.name}
-                    </strong>{' '}
-                    · {POI_STYLE[hoveredPoi.kind].categoryLabel} ({hoveredPoi.addr})
+                    <strong>{hoveredPoi.name}</strong> · {POI_STYLE[hoveredPoi.kind].categoryLabel}
                   </>
                 ) : hoveredParcel ? (
                   <>
-                    <strong>{hoveredParcel.addr}</strong> ·{' '}
-                    {CATEGORY_META[hoveredParcel.cat].label} · {hoveredParcel.acres} ac
+                    <strong>{hoveredParcel.addr}</strong> · {hoveredParcel.acres} ac
                     {hoveredParcel.val ? (
                       <span className="priv-val">
                         {' '}
@@ -1227,7 +1340,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
             )}
           </div>
 
-          {/* Right: Selected POI or Property Dossier */}
+          {/* Right: Selected Property or Place Dossier */}
           <aside
             style={{
               borderRadius: 'var(--radius)',
@@ -1237,7 +1350,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: 14,
-              maxHeight: 640,
+              maxHeight: 620,
               overflowY: 'auto',
             }}
           >
@@ -1247,13 +1360,12 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   <span
                     className="badge"
                     style={{
-                      background: POI_STYLE[selectedPoi.kind].bg,
+                      background: POI_STYLE[selectedPoi.kind].color,
                       color: '#ffffff',
                       border: 'none',
                       marginBottom: 8,
                     }}
                   >
-                    {POI_STYLE[selectedPoi.kind].glyph}{' '}
                     {POI_STYLE[selectedPoi.kind].categoryLabel}
                   </span>
                   <h2 style={{ fontSize: 22, margin: '4px 0' }}>{selectedPoi.name}</h2>
@@ -1276,7 +1388,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               </>
             ) : !selectedParcel ? (
               <p style={{ color: 'var(--ink-2)', fontSize: 14 }}>
-                Click any parcel, beach, park, golf course, or Main Street shop on the aerial map.
+                Click any home or place on the Bellport Village map.
               </p>
             ) : (
               <>
@@ -1285,15 +1397,15 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                     <span
                       className="badge"
                       style={{
-                        background: CATEGORY_META[selectedParcel.cat].fill,
+                        background: CATEGORY_META[selectedParcel.cat].dot,
                         color: selectedParcel.cat === 'built_3yr' ? '#202124' : '#ffffff',
                         border: 'none',
                       }}
                     >
                       {CATEGORY_META[selectedParcel.cat].label}
                     </span>
-                    {circledIds.has(selectedParcel.id) && (
-                      <span className="badge badge--village">◎ Circled Match</span>
+                    {matchedIds.has(selectedParcel.id) && (
+                      <span className="badge badge--village">Outlined Match</span>
                     )}
                   </div>
                   <h2 style={{ fontSize: 22, margin: '0 0 4px' }}>{selectedParcel.addr}</h2>
@@ -1372,12 +1484,11 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   </div>
                   <div>
                     <span style={{ color: 'var(--ink-2)', display: 'block' }}>
-                      Frontage × Depth
+                      Structures Mapped
                     </span>
                     <strong style={{ fontFamily: 'var(--font-mono)' }}>
-                      {selectedParcel.front && selectedParcel.depth
-                        ? `${selectedParcel.front}' × ${selectedParcel.depth}'`
-                        : 'Irregular'}
+                      {selectedParcel.bldgs?.length ?? 0}{' '}
+                      {(selectedParcel.bldgs?.length ?? 0) === 1 ? 'footprint' : 'footprints'}
                     </strong>
                   </div>
                 </div>

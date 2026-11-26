@@ -128,6 +128,7 @@ export interface VillageParcel {
   pastRemarks?: string | null;
   sourceUrl?: string | null;
   rings: number[][][];
+  bldgs?: number[][][];
 }
 
 export interface VillageStreet {
@@ -171,6 +172,8 @@ export interface VillageParcelsBundle {
   bbox: { west: number; south: number; east: number; north: number };
   aerialBounds: { west: number; south: number; east: number; north: number; z: number };
   boundaryRings: number[][][];
+  waterRings?: number[][][];
+  outsideBldgs?: number[][][];
   streets: VillageStreet[];
   streetLabels: VillageStreetLabel[];
   pois: VillagePoi[];
