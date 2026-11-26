@@ -61,6 +61,7 @@ export interface Listing {
   daysOnMarket: number;
   listedDate: string; // ISO YYYY-MM-DD
   style: string;
+  styleSummary?: string;
   archetype: ArchetypeIllustration;
   headline: string;
   description: string;
@@ -127,8 +128,29 @@ export interface VillageParcel {
   mlsPhotos: number;
   pastRemarks?: string | null;
   sourceUrl?: string | null;
+  poiKind?: VillagePoiKind;
+  poiName?: string;
   rings: number[][][];
   bldgs?: number[][][];
+}
+
+export interface HistoricalSaleRecord {
+  id: string;
+  address: string;
+  date: string; // YYYY-MM-DD
+  price: number;
+  listPrice?: number | null;
+  beds?: number | null;
+  baths?: number | null;
+  sqft?: number | null;
+  acres?: number | null;
+  yearBuilt?: number | null;
+  inVillage: boolean;
+  area: BellportMicroArea;
+  pool: boolean;
+  ppsf?: number | null;
+  parcelId?: string | null;
+  source: string;
 }
 
 export interface VillageStreet {
@@ -153,6 +175,7 @@ export interface VillagePoi {
   lat: number;
   addr: string;
   desc: string;
+  parcelId?: string | null;
 }
 
 export interface VillageParcelsBundle {

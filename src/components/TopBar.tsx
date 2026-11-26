@@ -45,18 +45,23 @@ export const TopBar: React.FC<TopBarProps> = ({
     <header className={`topbar ${scrolled ? 'is-scrolled' : ''}`}>
       <div className="container topbar__inner">
         <div className="topbar__brand">
-          <AppMark size={26} />
-          <span className="topbar__title">Bellport Watch</span>
-          <span className="topbar__slash" aria-hidden="true">
-            /
-          </span>
-          <span className="topbar__scope-chip" title="Focused on Bellport Village, NY (11713)">
-            Bellport Village, NY
-          </span>
+          <AppMark size={25} />
+          <span className="topbar__title">Bellport NY</span>
         </div>
 
         <div className="topbar__right">
           <div className="segmented-tabs" role="tablist" aria-label="Primary views">
+            <button
+              id="view-map"
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'map'}
+              className={`segmented-tabs__tab ${activeView === 'map' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('map')}
+            >
+              Map
+            </button>
+
             <button
               id="view-listings"
               type="button"
@@ -70,15 +75,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
 
             <button
-              id="view-map"
+              id="view-history"
               type="button"
               role="tab"
-              aria-selected={activeView === 'map'}
-              className={`segmented-tabs__tab ${activeView === 'map' ? 'is-active' : ''}`}
-              onClick={() => onSelectView('map')}
+              aria-selected={activeView === 'history'}
+              className={`segmented-tabs__tab ${activeView === 'history' ? 'is-active' : ''}`}
+              onClick={() => onSelectView('history')}
             >
-              Village Map
-              <span className="segmented-tabs__count">{counts.parcels.toLocaleString()}</span>
+              Prices
             </button>
 
             <button
@@ -89,8 +93,10 @@ export const TopBar: React.FC<TopBarProps> = ({
               className={`segmented-tabs__tab ${activeView === 'favorites' ? 'is-active' : ''}`}
               onClick={() => onSelectView('favorites')}
             >
-              Favorites
-              <span className="segmented-tabs__count">{counts.favorites}</span>
+              Saved
+              {counts.favorites > 0 && (
+                <span className="segmented-tabs__count">{counts.favorites}</span>
+              )}
             </button>
 
             <button
@@ -102,19 +108,9 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={() => onSelectView('alerts')}
             >
               Alerts
-              <span className="segmented-tabs__count">{counts.alertHits}</span>
-            </button>
-
-            <button
-              id="view-history"
-              type="button"
-              role="tab"
-              aria-selected={activeView === 'history'}
-              className={`segmented-tabs__tab ${activeView === 'history' ? 'is-active' : ''}`}
-              onClick={() => onSelectView('history')}
-            >
-              Prices
-              <span className="segmented-tabs__count">{counts.priceDrops}</span>
+              {counts.alertHits > 0 && (
+                <span className="segmented-tabs__count">{counts.alertHits}</span>
+              )}
             </button>
           </div>
 

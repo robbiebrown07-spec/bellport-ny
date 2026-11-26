@@ -242,7 +242,6 @@ export function normalizeRealtyRecord(
       card.formattedAddress
   );
   const city = str(addrObj.city ?? card.city);
-  const postalCode = str(addrObj.postal_code ?? addrObj.zip ?? card.postal_code);
 
   if (!streetLine) return null;
 
@@ -283,14 +282,8 @@ export function normalizeRealtyRecord(
 
   const { area, inVillage, walkToMarinaMin } = classifyBellportLocation(streetLine, lat, lon);
 
-  // Keep Bellport Village, Bellport 11713, and immediate Bellport-border Brookhaven Hamlet homes
-  const isBellportArea =
-    inVillage ||
-    postalCode === '11713' ||
-    /bellport/i.test(city) ||
-    (/brookhaven/i.test(city) && /bellport/i.test(verbatimRemarks));
-
-  if (!isBellportArea) {
+  // Include strictly Incorporated Bellport Village homes (exclude East Patchogue, North Bellport, Brookhaven Hamlet)
+  if (!inVillage || /east\s+patchogue|brookhaven\s+hamlet/i.test(`${streetLine} ${city}`)) {
     return null;
   }
 

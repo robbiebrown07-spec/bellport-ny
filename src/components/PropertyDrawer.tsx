@@ -8,7 +8,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { Listing, PricePoint, UserTrackStatus } from '../types';
+import type { Listing, PricePoint } from '../types';
 import { evaluateAirbnbViability, evaluateGoodDeal } from '../lib/intelligence';
 import { PhotoGallery } from './PhotoGallery';
 import { PriceHistoryChart } from './PriceHistoryChart';
@@ -27,13 +27,6 @@ interface PropertyDrawerProps {
   onUpdateListing: (id: string, patch: Partial<Listing>) => void;
   onDeleteListing: (id: string) => void;
 }
-
-const STATUS_OPTIONS: Array<{ value: UserTrackStatus; label: string }> = [
-  { value: 'shortlist', label: 'Shortlist' },
-  { value: 'watching', label: 'Watching' },
-  { value: 'unreviewed', label: 'Unreviewed' },
-  { value: 'pass', label: 'Pass' },
-];
 
 const TONE_BG: Record<'green' | 'blue' | 'yellow' | 'red', string> = {
   green: 'var(--g-green-50)',
@@ -213,42 +206,17 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               </span>
             </div>
 
-            <h2 id="drawer-listing-title" style={{ fontSize: 28, marginBottom: 4 }}>
+            <h2 id="drawer-listing-title" style={{ fontSize: 26, marginBottom: 4 }}>
               <HighlightedText text={listing.address} query={searchQuery} />
             </h2>
-            <p style={{ color: 'var(--ink-2)', fontSize: 14 }}>
+            <p style={{ color: 'var(--ink-2)', fontSize: 13, marginBottom: 6 }}>
               {listing.area} · {listing.style} · Built {listing.yearBuilt}
-              {listing.walkToMarinaMin ? ` · ${listing.walkToMarinaMin} min walk to Marina` : ''}
             </p>
-          </div>
-
-          {/* Triage Status Selector */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 8 }}>
-              SECOND-HOME TRACKING STATUS
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {STATUS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`status-dot-btn ${listing.userStatus === opt.value ? 'is-active' : ''}`}
-                  style={
-                    listing.userStatus === opt.value
-                      ? {
-                          borderColor: 'var(--accent)',
-                          background: 'var(--accent-soft)',
-                          color: 'var(--ink)',
-                        }
-                      : undefined
-                  }
-                  onClick={() => onUpdateListing(listing.id, { userStatus: opt.value })}
-                >
-                  <span className={`status-dot status-dot--${opt.value}`} />
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            {(listing.styleSummary || listing.headline) && (
+              <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)', margin: 0 }}>
+                {listing.styleSummary ?? listing.headline}
+              </p>
+            )}
           </div>
 
           {/* Core Specs Grid */}
@@ -264,7 +232,9 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             }}
           >
             <div>
-              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Asking Price</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                {listing.marketStatus === 'sold' ? 'Sold Price' : 'Asking Price'}
+              </div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
                 ${listing.price.toLocaleString()}
               </strong>
@@ -276,9 +246,9 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               </strong>
             </div>
             <div>
-              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Est. Annual Taxes</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Est. Fair Value</div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
-                ${listing.annualTaxes.toLocaleString()}/yr
+                ${deal.estimatedFairPrice.toLocaleString()}
               </strong>
             </div>
             <div>
@@ -290,7 +260,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Interior Space</div>
               <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 16 }}>
-                {listing.sqft > 0 ? `${listing.sqft.toLocaleString()} sq ft` : 'Undisclosed'}
+                {listing.sqft > 0 ? `${listing.sqft.toLocaleString()} sq ft` : '—'}
               </strong>
             </div>
             <div>
@@ -301,7 +271,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             </div>
           </div>
 
-          {/* Good Deal & Airbnb Viability Assessment Cards */}
+          {/* Valuation & Rental Assessment Cards */}
           <div className="form-grid">
             <div
               style={{
@@ -314,11 +284,12 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)' }}>
-                  DEAL RATING
+                  VALUATION
                 </span>
                 <span
+                  className="priv-val"
                   style={{
                     padding: '3px 10px',
                     borderRadius: 'var(--radius-pill)',
@@ -328,16 +299,14 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                     color: TONE_INK[deal.tone],
                   }}
                 >
-                  {deal.score}/100 · {deal.tier}
+                  {deal.badgeLabel}
                 </span>
               </div>
               <div style={{ fontSize: 13 }} className="priv-val">
-                Model comp benchmark:{' '}
+                Est. Village value:{' '}
                 <strong style={{ fontFamily: 'var(--font-mono)' }}>
                   ${deal.estimatedFairPrice.toLocaleString()}
-                </strong>{' '}
-                ({deal.deltaPct > 0 ? `+${deal.deltaPct}% above` : `${deal.deltaPct}% below`} comp
-                norm)
+                </strong>
               </div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {deal.reasons.map((r) => (

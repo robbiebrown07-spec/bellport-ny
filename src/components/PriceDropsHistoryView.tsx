@@ -3,6 +3,7 @@ import { TrendingDown } from 'lucide-react';
 import type { Listing } from '../types';
 import { evaluateGoodDeal, getPriceChangeStats } from '../lib/intelligence';
 import { PriceHistoryChart } from './PriceHistoryChart';
+import { SalesOverTimeModule } from './SalesOverTimeModule';
 
 interface PriceDropsHistoryViewProps {
   listings: Listing[];
@@ -27,17 +28,11 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
 
   return (
     <section className="results-band" aria-label="House prices over time">
-      <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <SalesOverTimeModule privacyBlur={privacyBlur} />
+
         <div>
-          <span className="eyebrow">Longitudinal Price Tracking</span>
-          <h2 style={{ fontSize: 'var(--fs-h2)', marginBottom: 6 }}>
-            Bellport asking prices & reductions over time.
-          </h2>
-          <p style={{ fontSize: 15, color: 'var(--ink-2)', maxWidth: '68ch' }}>
-            {reducedCount} tracked {reducedCount === 1 ? 'property has' : 'properties have'}{' '}
-            trimmed asking prices since initial launch. Every daily sync appends new price changes
-            automatically.
-          </p>
+          <h2 style={{ fontSize: 20, margin: 0 }}>Active Listing Price Cuts ({reducedCount})</h2>
         </div>
 
         <div

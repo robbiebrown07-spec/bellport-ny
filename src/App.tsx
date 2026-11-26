@@ -1,16 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Award,
-  Check,
   Heart,
-  Home,
   LayoutGrid,
   List,
   RotateCcw,
   Search,
-  ShieldCheck,
-  Sparkles,
-  Waves,
   X,
 } from 'lucide-react';
 import { median } from 'd3-array';
@@ -23,13 +17,11 @@ import type {
   PrimaryView,
   StreetAlertRule,
   SyncMetadata,
-  UserTrackStatus,
 } from './types';
 import { fetchSeedListings, loadBootstrap, saveState } from './lib/storage';
 import { filterAndSortListings } from './lib/search';
 import { parseListingSnippet } from './lib/parser';
 import {
-  evaluateAirbnbViability,
   evaluateGoodDeal,
   evaluateStreetAlerts,
   getPriceChangeStats,
@@ -49,10 +41,11 @@ import { StreetAlertsView } from './components/StreetAlertsView';
 import { PriceDropsHistoryView } from './components/PriceDropsHistoryView';
 import { VillageParcelMapView } from './components/VillageParcelMapView';
 import { CornerDock } from './components/CornerDock';
+import { MeceFilterDropdown, type MeceBucketOption } from './components/MeceFilterDropdown';
 import { useCountUp } from './components/useCountUp';
 
 const DEFAULT_FILTERS: FilterState = {
-  view: 'listings',
+  view: 'map',
   tab: 'all',
   q: '',
   minPrice: null,
@@ -66,35 +59,48 @@ const DEFAULT_FILTERS: FilterState = {
   zoneXOnly: false,
   minDealScore: null,
   airbnbEligibleOnly: false,
-  marketStatus: 'all',
+  marketStatus: 'active',
   sortBy: 'newest',
   layout: 'grid',
 };
 
-const QUICK_KEYWORDS = [
-  'pool',
-  '"Bellport Lane"',
-  'guest cottage',
-  'screened porch',
-  'fireplace',
-  'waterfront',
-  'off-market',
-  'renovated',
+const LISTING_STATUS_OPTS: MeceBucketOption[] = [
+  { value: 'active', label: 'For Sale', swatch: '#ea4335' },
+  { value: 'sold', label: 'Sold Comps', swatch: '#34a853' },
 ];
 
-const NEXT_STATUS: Record<UserTrackStatus, UserTrackStatus> = {
-  unreviewed: 'shortlist',
-  shortlist: 'watching',
-  watching: 'pass',
-  pass: 'unreviewed',
-};
+const LISTING_PRICE_OPTS: MeceBucketOption[] = [
+  { value: 'p1', label: 'Under $1M' },
+  { value: 'p2', label: '$1M – $2M' },
+  { value: 'p3', label: '$2M – $3M' },
+  { value: 'p4', label: '$3M+' },
+];
 
-const STATUS_LABEL: Record<UserTrackStatus, string> = {
-  shortlist: 'Shortlist',
-  watching: 'Watching',
-  pass: 'Pass',
-  unreviewed: 'Track',
-};
+const LISTING_SIZE_OPTS: MeceBucketOption[] = [
+  { value: 's1', label: '< 1,800 ft² (1–2 BR)' },
+  { value: 's2', label: '1,800 – 2,349 ft² (3 BR)' },
+  { value: 's3', label: '2,350 – 3,499 ft² (4 BR)' },
+  { value: 's4', label: '3,500+ ft² (5+ BR)' },
+];
+
+const LISTING_LOT_OPTS: MeceBucketOption[] = [
+  { value: 'l1', label: '< 0.35 ac' },
+  { value: 'l2', label: '0.35 – 0.49 ac' },
+  { value: 'l3', label: '0.50 – 0.99 ac' },
+  { value: 'l4', label: '1.00+ ac' },
+];
+
+const LISTING_AREA_OPTS: MeceBucketOption[] = [
+  { value: 'Historic Lanes', label: 'Historic Lanes' },
+  { value: 'Country Club & Golf', label: 'Country Club & Golf' },
+  { value: 'Village Center', label: 'Village Center' },
+  { value: 'East Lanes & Circuit', label: 'East Lanes & Circuit' },
+];
+
+const LISTING_VALUATION_OPTS: MeceBucketOption[] = [
+  { value: 'underpriced', label: 'Underpriced', swatch: '#34a853' },
+  { value: 'overpriced', label: 'Overpriced', swatch: '#ea4335' },
+];
 
 function readInitialClipDraft(): Partial<Listing> | null {
   if (typeof window === 'undefined') return null;
@@ -138,9 +144,9 @@ function readFiltersFromUrl(): FilterState {
   const marketStatus = sp.get('status');
 
   const validView: PrimaryView =
-    view === 'map' || view === 'favorites' || view === 'alerts' || view === 'history'
+    view === 'listings' || view === 'favorites' || view === 'alerts' || view === 'history'
       ? view
-      : 'listings';
+      : 'map';
 
   const validSorts: Array<FilterState['sortBy']> = [
     'newest',
@@ -200,6 +206,12 @@ export const App: React.FC = () => {
   const [addOpen, setAddOpen] = useState<boolean>(() => Boolean(readInitialClipDraft()));
   const [syncOpen, setSyncOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [lStatusSet, setLStatusSet] = useState<Set<string>>(() => new Set(['active']));
+  const [lPriceSet, setLPriceSet] = useState<Set<string>>(() => new Set());
+  const [lSizeSet, setLSizeSet] = useState<Set<string>>(() => new Set());
+  const [lLotSet, setLLotSet] = useState<Set<string>>(() => new Set());
+  const [lAreaSet, setLAreaSet] = useState<Set<string>>(() => new Set());
+  const [lValSet, setLValSet] = useState<Set<string>>(() => new Set());
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Bootstrap from /api/bootstrap (with IndexedDB fallback)
@@ -325,13 +337,54 @@ export const App: React.FC = () => {
     }
   };
 
-  const allListings = useMemo(() => appState?.listings ?? [], [appState]);
+  const allListings = useMemo(
+    () =>
+      (appState?.listings ?? []).filter(
+        (l) => l.inVillage && l.area !== 'Outside Village (11713)'
+      ),
+    [appState]
+  );
   const streetAlerts = useMemo(() => appState?.streetAlerts ?? [], [appState]);
 
-  const visibleListings = useMemo(
-    () => filterAndSortListings(allListings, filters),
-    [allListings, filters]
-  );
+  const visibleListings = useMemo(() => {
+    const base = filterAndSortListings(allListings, { ...filters, marketStatus: 'all' });
+    return base.filter((item) => {
+      if (lStatusSet.size > 0 && !lStatusSet.has(item.marketStatus)) return false;
+      if (lPriceSet.size > 0) {
+        const pb =
+          item.price < 1_000_000
+            ? 'p1'
+            : item.price < 2_000_000
+              ? 'p2'
+              : item.price < 3_000_000
+                ? 'p3'
+                : 'p4';
+        if (!lPriceSet.has(pb)) return false;
+      }
+      if (lSizeSet.size > 0) {
+        const sf = item.sqft || item.beds * 620;
+        const sb = sf < 1800 ? 's1' : sf < 2350 ? 's2' : sf < 3500 ? 's3' : 's4';
+        if (!lSizeSet.has(sb)) return false;
+      }
+      if (lLotSet.size > 0) {
+        const lb =
+          item.lotAcres < 0.35
+            ? 'l1'
+            : item.lotAcres < 0.5
+              ? 'l2'
+              : item.lotAcres < 1.0
+                ? 'l3'
+                : 'l4';
+        if (!lLotSet.has(lb)) return false;
+      }
+      if (lAreaSet.size > 0 && !lAreaSet.has(item.area)) return false;
+      if (lValSet.size > 0) {
+        const deal = evaluateGoodDeal(item, allListings);
+        if (!lValSet.has(deal.status)) return false;
+      }
+      return true;
+    });
+  }, [allListings, filters, lStatusSet, lPriceSet, lSizeSet, lLotSet, lAreaSet, lValSet]);
 
   const navCounts = useMemo(() => {
     const alertTriggered = evaluateStreetAlerts(streetAlerts, allListings);
@@ -343,7 +396,7 @@ export const App: React.FC = () => {
     ).length;
 
     return {
-      listings: allListings.length,
+      listings: allListings.filter((l) => l.marketStatus === 'active').length,
       parcels: 1213,
       favorites: allListings.filter((l) => l.isFavorite).length,
       alertHits: uniqueAlertHitIds.size,
@@ -365,14 +418,9 @@ export const App: React.FC = () => {
       ),
     [visibleListings]
   );
-  const villageCount = useMemo(
-    () => visibleListings.filter((d) => d.inVillage).length,
-    [visibleListings]
-  );
 
   const animMatches = useCountUp(visibleListings.length);
   const animPpsf = useCountUp(medianPpsf);
-  const animVillage = useCountUp(villageCount);
 
   if (!appState) {
     return (
@@ -383,23 +431,25 @@ export const App: React.FC = () => {
   }
 
   const hasSampleData = appState.listings.some((l) => l.isSample);
-  const sampleCount = appState.listings.filter((l) => l.isSample).length;
 
   const hasActiveFilters =
-    filters.tab !== 'all' ||
     filters.q !== '' ||
-    filters.minPrice !== null ||
-    filters.maxPrice !== null ||
-    filters.minBeds !== null ||
-    filters.minBaths !== null ||
-    filters.minSqft !== null ||
-    filters.minAcres !== null ||
-    filters.area !== 'all' ||
-    filters.villageOnly ||
-    filters.zoneXOnly ||
-    filters.minDealScore !== null ||
-    filters.airbnbEligibleOnly ||
-    filters.marketStatus !== 'all';
+    lPriceSet.size > 0 ||
+    lSizeSet.size > 0 ||
+    lLotSet.size > 0 ||
+    lAreaSet.size > 0 ||
+    lValSet.size > 0 ||
+    !(lStatusSet.size === 1 && lStatusSet.has('active'));
+
+  const resetListingMece = () => {
+    setFilters((prev) => ({ ...prev, q: '' }));
+    setLStatusSet(new Set(['active']));
+    setLPriceSet(new Set());
+    setLSizeSet(new Set());
+    setLLotSet(new Set());
+    setLAreaSet(new Set());
+    setLValSet(new Set());
+  };
 
   const selectedIndex = selectedId
     ? visibleListings.findIndex((l) => l.id === selectedId)
@@ -508,18 +558,6 @@ export const App: React.FC = () => {
     });
   };
 
-  const toggleKeywordChip = (kw: string) => {
-    setFilters((prev) => {
-      const current = prev.q.trim();
-      if (current.toLowerCase() === kw.toLowerCase()) {
-        return { ...prev, q: '' };
-      }
-      return { ...prev, q: kw };
-    });
-  };
-
-  const pricePresetValue = `${filters.minPrice ?? ''}-${filters.maxPrice ?? ''}`;
-
   return (
     <>
       <TopBar
@@ -592,15 +630,14 @@ export const App: React.FC = () => {
 
         {filters.view === 'listings' && (
           <>
-            {/* Editorial Header Band */}
+            {/* Lean Header Band */}
             <section className="hero-band">
               <div className="container hero-band__grid">
                 <div>
-                  <span className="eyebrow">Second-Home Search · 11713</span>
                   <h1 className="hero-band__title">
                     <EditableText
                       id="hero-title"
-                      fallback="Tracking second-home candidates in Bellport Village."
+                      fallback="Bellport NY"
                       overrides={appState.copyOverrides}
                       editMode={appState.preferences.editMode}
                       onSave={handleSaveCopyOverride}
@@ -609,7 +646,7 @@ export const App: React.FC = () => {
                   <p className="hero-band__lede">
                     <EditableText
                       id="hero-lede"
-                      fallback="Compare asking prices over time, deal scores, and Village Airbnb eligibility—or search remarks for pools, guest cottages, and historic lanes south of Main Street."
+                      fallback="Search for a beach house"
                       overrides={appState.copyOverrides}
                       editMode={appState.preferences.editMode}
                       onSave={handleSaveCopyOverride}
@@ -617,348 +654,112 @@ export const App: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="hero-band__kpis" aria-label="Filtered market summary">
+                <div className="hero-band__kpis" aria-label="Bellport Village summary">
                   <div className="kpi-item">
                     <div className="kpi-item__val">{animMatches}</div>
-                    <div className="kpi-item__label">Matching listings</div>
+                    <div className="kpi-item__label">Homes</div>
                   </div>
                   <div className="kpi-item">
                     <div className="kpi-item__val priv-val">
                       {medianPrice > 0 ? `$${(medianPrice / 1_000_000).toFixed(2)}M` : '—'}
                     </div>
-                    <div className="kpi-item__label">Median asking price</div>
+                    <div className="kpi-item__label">Median</div>
                   </div>
                   <div className="kpi-item">
                     <div className="kpi-item__val priv-val">
                       {animPpsf > 0 ? `$${animPpsf}` : '—'}
                     </div>
-                    <div className="kpi-item__label">Median price / sq ft</div>
-                  </div>
-                  <div className="kpi-item">
-                    <div className="kpi-item__val">{animVillage}</div>
-                    <div className="kpi-item__label">In Incorporated Village</div>
+                    <div className="kpi-item__label">$/Sq Ft</div>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* Filter & Keyword Search Band */}
-            <section className="filter-band" aria-label="Search and category filters">
-              <div className="container">
-                <div className="search-row">
-                  <div className="search-box">
-                    <Search size={18} className="search-box__icon" />
-                    <input
-                      id="keyword-search-input"
-                      ref={searchInputRef}
-                      type="search"
-                      className="search-box__input"
-                      value={filters.q}
-                      onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                      placeholder='Keyword search: e.g. pool, "Bellport Lane", guest cottage, fireplace, ferry...'
-                      aria-label="Search listings by keyword"
+            {/* Clean MECE Dropdown Filter Bar */}
+            <section className="filter-band" aria-label="Bellport Village filters">
+              <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <MeceFilterDropdown
+                      label="Status"
+                      options={LISTING_STATUS_OPTS}
+                      selected={lStatusSet}
+                      onChange={setLStatusSet}
                     />
-                    {filters.q ? (
-                      <button
-                        type="button"
-                        className="search-box__clear"
-                        onClick={() => setFilters((f) => ({ ...f, q: '' }))}
-                        aria-label="Clear search query"
-                      >
-                        <X size={14} />
-                      </button>
-                    ) : (
-                      <span className="search-box__kbd" aria-hidden="true">
-                        /
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick Bellport Keyword Chips */}
-                <div className="keyword-chips" role="group" aria-label="Popular keyword searches">
-                  <span className="keyword-chips__label">Quick keywords:</span>
-                  {QUICK_KEYWORDS.map((kw) => {
-                    const active = filters.q.trim().toLowerCase() === kw.toLowerCase();
-                    return (
-                      <button
-                        key={kw}
-                        type="button"
-                        className={`kw-chip ${active ? 'is-active' : ''}`}
-                        onClick={() => toggleKeywordChip(kw)}
-                      >
-                        {kw}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Major Category Filters */}
-                <div className="filter-controls">
-                  <div className="filter-field">
-                    <label htmlFor="filter-price" className="filter-field__label">
-                      Price Bracket
-                    </label>
-                    <select
-                      id="filter-price"
-                      className="filter-field__select"
-                      value={pricePresetValue}
-                      onChange={(e) => {
-                        const [minStr, maxStr] = e.target.value.split('-');
-                        setFilters((f) => ({
-                          ...f,
-                          minPrice: minStr ? Number(minStr) : null,
-                          maxPrice: maxStr ? Number(maxStr) : null,
-                        }));
-                      }}
-                    >
-                      <option value="-">Any Price</option>
-                      <option value="-1250000">Under $1.25M</option>
-                      <option value="-1750000">Under $1.75M</option>
-                      <option value="-2250000">Under $2.25M</option>
-                      <option value="-2750000">Under $2.75M</option>
-                      <option value="1500000-2500000">$1.5M – $2.5M</option>
-                      <option value="2500000-">$2.5M+</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-field">
-                    <label htmlFor="filter-beds" className="filter-field__label">
-                      Bedrooms
-                    </label>
-                    <select
-                      id="filter-beds"
-                      className="filter-field__select"
-                      value={filters.minBeds ?? ''}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          minBeds: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    >
-                      <option value="">Any Beds</option>
-                      <option value="2">2+ Beds</option>
-                      <option value="3">3+ Beds</option>
-                      <option value="4">4+ Beds</option>
-                      <option value="5">5+ Beds</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-field">
-                    <label htmlFor="filter-baths" className="filter-field__label">
-                      Bathrooms
-                    </label>
-                    <select
-                      id="filter-baths"
-                      className="filter-field__select"
-                      value={filters.minBaths ?? ''}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          minBaths: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    >
-                      <option value="">Any Baths</option>
-                      <option value="2">2+ Baths</option>
-                      <option value="3">3+ Baths</option>
-                      <option value="4">4+ Baths</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-field">
-                    <label htmlFor="filter-sqft" className="filter-field__label">
-                      Interior Space
-                    </label>
-                    <select
-                      id="filter-sqft"
-                      className="filter-field__select"
-                      value={filters.minSqft ?? ''}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          minSqft: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    >
-                      <option value="">Any Sq Ft</option>
-                      <option value="1500">1,500+ sq ft</option>
-                      <option value="2200">2,200+ sq ft</option>
-                      <option value="2800">2,800+ sq ft</option>
-                      <option value="3400">3,400+ sq ft</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-field">
-                    <label htmlFor="filter-acres" className="filter-field__label">
-                      Lot Space
-                    </label>
-                    <select
-                      id="filter-acres"
-                      className="filter-field__select"
-                      value={filters.minAcres ?? ''}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          minAcres: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    >
-                      <option value="">Any Lot Size</option>
-                      <option value="0.25">0.25+ acres</option>
-                      <option value="0.45">0.45+ acres (Pool-friendly)</option>
-                      <option value="0.7">0.70+ acres</option>
-                      <option value="1">1.00+ acres</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-field">
-                    <label htmlFor="filter-area" className="filter-field__label">
-                      Micro-Area / Lane
-                    </label>
-                    <select
-                      id="filter-area"
-                      className="filter-field__select"
-                      value={filters.area}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          area: (e.target.value as BellportMicroArea) || 'all',
-                        }))
-                      }
-                    >
-                      <option value="all">All Bellport Areas</option>
-                      <option value="Historic Lanes">Historic Lanes (South of Main)</option>
-                      <option value="Country Club & Golf">Country Club &amp; Golf</option>
-                      <option value="Village Center">Village Center</option>
-                      <option value="East Lanes & Circuit">East Lanes &amp; Circuit</option>
-                      <option value="Outside Village (11713)">Outside Village (11713)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Guardrail & Value/Airbnb Toggles */}
-                <div className="filter-toggles">
-                  <div className="filter-toggles__left">
-                    <button
-                      id="toggle-village-only"
-                      type="button"
-                      className={`pill-toggle ${filters.villageOnly ? 'is-active' : ''}`}
-                      onClick={() => setFilters((f) => ({ ...f, villageOnly: !f.villageOnly }))}
-                      aria-pressed={filters.villageOnly}
-                    >
-                      {filters.villageOnly ? <Check size={14} /> : <Waves size={14} />}
-                      <span>Inc. Village Only (Ho-Hum Ferry)</span>
-                    </button>
-
-                    <button
-                      id="toggle-zonex-only"
-                      type="button"
-                      className={`pill-toggle ${filters.zoneXOnly ? 'is-active' : ''}`}
-                      onClick={() => setFilters((f) => ({ ...f, zoneXOnly: !f.zoneXOnly }))}
-                      aria-pressed={filters.zoneXOnly}
-                    >
-                      {filters.zoneXOnly ? <Check size={14} /> : <ShieldCheck size={14} />}
-                      <span>Flood Zone X</span>
-                    </button>
-
-                    <button
-                      id="toggle-good-deals"
-                      type="button"
-                      className={`pill-toggle ${filters.minDealScore !== null ? 'is-active' : ''}`}
-                      onClick={() =>
-                        setFilters((f) => ({
-                          ...f,
-                          minDealScore: f.minDealScore === null ? 74 : null,
-                        }))
-                      }
-                      aria-pressed={filters.minDealScore !== null}
-                    >
-                      {filters.minDealScore !== null ? <Check size={14} /> : <Award size={14} />}
-                      <span>Strong Deals (74+)</span>
-                    </button>
-
-                    <button
-                      id="toggle-airbnb-legal"
-                      type="button"
-                      className={`pill-toggle ${filters.airbnbEligibleOnly ? 'is-active' : ''}`}
-                      onClick={() =>
-                        setFilters((f) => ({
-                          ...f,
-                          airbnbEligibleOnly: !f.airbnbEligibleOnly,
-                        }))
-                      }
-                      aria-pressed={filters.airbnbEligibleOnly}
-                    >
-                      {filters.airbnbEligibleOnly ? <Check size={14} /> : <Home size={14} />}
-                      <span>Airbnb / Short-Stay Legal</span>
-                    </button>
-
-                    <select
-                      id="filter-market-status"
-                      className="filter-field__select"
-                      style={{ height: 36, fontSize: 13 }}
-                      value={filters.marketStatus}
-                      onChange={(e) =>
-                        setFilters((f) => ({
-                          ...f,
-                          marketStatus: (e.target.value as MarketStatus) || 'all',
-                        }))
-                      }
-                      aria-label="Filter by market status"
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="active">Active On-Market</option>
-                      <option value="off-market">Off-Market / Whisper</option>
-                      <option value="contingent">In Contract</option>
-                      <option value="sold">Sold Comps</option>
-                    </select>
-                  </div>
-
-                  <div className="filter-toggles__right">
+                    <MeceFilterDropdown
+                      label="Price"
+                      options={LISTING_PRICE_OPTS}
+                      selected={lPriceSet}
+                      onChange={setLPriceSet}
+                    />
+                    <MeceFilterDropdown
+                      label="Size"
+                      options={LISTING_SIZE_OPTS}
+                      selected={lSizeSet}
+                      onChange={setLSizeSet}
+                    />
+                    <MeceFilterDropdown
+                      label="Lot"
+                      options={LISTING_LOT_OPTS}
+                      selected={lLotSet}
+                      onChange={setLLotSet}
+                    />
+                    <MeceFilterDropdown
+                      label="Area"
+                      options={LISTING_AREA_OPTS}
+                      selected={lAreaSet}
+                      onChange={setLAreaSet}
+                    />
+                    <MeceFilterDropdown
+                      label="Valuation"
+                      options={LISTING_VALUATION_OPTS}
+                      selected={lValSet}
+                      onChange={setLValSet}
+                    />
                     {hasActiveFilters && (
                       <button
                         id="btn-reset-filters"
                         type="button"
                         className="icon-btn"
-                        onClick={() =>
-                          setFilters((prev) => ({
-                            ...DEFAULT_FILTERS,
-                            view: prev.view,
-                            layout: prev.layout,
-                          }))
-                        }
+                        style={{ height: 34 }}
+                        onClick={resetListingMece}
                       >
-                        <RotateCcw size={14} />
-                        <span>Reset filters</span>
+                        <RotateCcw size={13} />
+                        <span>Reset</span>
                       </button>
                     )}
                   </div>
-                </div>
-              </div>
-            </section>
 
-            {/* Listings Results Band */}
-            <section className="results-band" aria-label="Matching Bellport properties">
-              <div className="container">
-                <div className="results-toolbar">
-                  <p className="results-toolbar__summary">
-                    Showing <strong>{visibleListings.length}</strong> of {allListings.length}{' '}
-                    tracked properties
-                    {filters.q ? (
-                      <>
-                        {' '}
-                        matching <strong>&ldquo;{filters.q}&rdquo;</strong>
-                      </>
-                    ) : null}
-                  </p>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="search-box" style={{ minWidth: 220 }}>
+                      <Search size={15} className="search-box__icon" />
+                      <input
+                        id="keyword-search-input"
+                        ref={searchInputRef}
+                        type="search"
+                        className="search-box__input"
+                        style={{ height: 34, fontSize: 13 }}
+                        value={filters.q}
+                        onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                        placeholder="Search address or style…"
+                        aria-label="Search Bellport Village listings"
+                      />
+                      {filters.q && (
+                        <button
+                          type="button"
+                          className="search-box__clear"
+                          onClick={() => setFilters((f) => ({ ...f, q: '' }))}
+                          aria-label="Clear search query"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
 
-                  <div className="results-toolbar__controls">
                     <select
                       id="select-sort-by"
                       className="filter-field__select"
-                      style={{ height: 38, fontSize: 13 }}
+                      style={{ height: 34, fontSize: 12.5 }}
                       value={filters.sortBy}
                       onChange={(e) =>
                         setFilters((f) => ({
@@ -968,15 +769,12 @@ export const App: React.FC = () => {
                       }
                       aria-label="Sort listings"
                     >
-                      <option value="newest">Sort: Newest Listed</option>
-                      <option value="deal-desc">Deal Rating: Best Value First</option>
-                      <option value="rental-desc">Airbnb &amp; Summer Score</option>
-                      <option value="price-cut">Biggest Price Cuts</option>
+                      <option value="newest">Newest</option>
+                      <option value="deal-desc">Most Underpriced</option>
                       <option value="price-asc">Price: Low → High</option>
                       <option value="price-desc">Price: High → Low</option>
-                      <option value="sqft-desc">Space: Largest Sq Ft</option>
-                      <option value="ppsf-asc">Value: Lowest $/Sq Ft</option>
-                      <option value="acres-desc">Lot: Largest Acreage</option>
+                      <option value="sqft-desc">Largest Sq Ft</option>
+                      <option value="acres-desc">Largest Lot</option>
                     </select>
 
                     <div className="segmented-tabs" role="group" aria-label="Layout toggle">
@@ -985,45 +783,34 @@ export const App: React.FC = () => {
                         className={`segmented-tabs__tab ${filters.layout === 'grid' ? 'is-active' : ''}`}
                         onClick={() => setFilters((f) => ({ ...f, layout: 'grid' }))}
                         aria-label="Card grid view"
-                        title="Editorial cards"
                       >
-                        <LayoutGrid size={15} />
+                        <LayoutGrid size={14} />
                       </button>
                       <button
                         type="button"
                         className={`segmented-tabs__tab ${filters.layout === 'table' ? 'is-active' : ''}`}
                         onClick={() => setFilters((f) => ({ ...f, layout: 'table' }))}
-                        aria-label="Comparison table view"
-                        title="Compact comparison table"
+                        aria-label="Table view"
                       >
-                        <List size={15} />
+                        <List size={14} />
                       </button>
                     </div>
                   </div>
                 </div>
+              </div>
+            </section>
 
+            {/* Bellport Village Listings */}
+            <section className="results-band" aria-label="Bellport Village properties">
+              <div className="container">
                 {visibleListings.length === 0 ? (
                   <div className="empty-state">
-                    <h2 style={{ fontSize: 22, marginBottom: 6 }}>
-                      No Bellport listings match those exact filters.
-                    </h2>
-                    <p style={{ color: 'var(--ink-2)', marginBottom: 16 }}>
-                      Try broadening the price ceiling, clearing a keyword chip, or syncing live
-                      listings.
+                    <p style={{ color: 'var(--ink-2)', marginBottom: 12 }}>
+                      No Bellport Village homes match those filters.
                     </p>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() =>
-                        setFilters((prev) => ({
-                          ...DEFAULT_FILTERS,
-                          view: prev.view,
-                          layout: prev.layout,
-                        }))
-                      }
-                    >
+                    <button type="button" className="icon-btn" onClick={resetListingMece}>
                       <RotateCcw size={14} />
-                      <span>Clear all filters</span>
+                      <span>Reset</span>
                     </button>
                   </div>
                 ) : filters.layout === 'grid' ? (
@@ -1032,7 +819,6 @@ export const App: React.FC = () => {
                       const ppsf = item.sqft > 0 ? Math.round(item.price / item.sqft) : 0;
                       const priceStats = getPriceChangeStats(item);
                       const deal = evaluateGoodDeal(item, allListings);
-                      const airbnb = evaluateAirbnbViability(item);
                       const photoCount = item.photos?.length ?? (item.photoUrl ? 1 : 0);
 
                       return (
@@ -1050,58 +836,28 @@ export const App: React.FC = () => {
                             <div className="listing-card__badges">
                               <span
                                 className={`badge ${
-                                  item.marketStatus === 'off-market'
-                                    ? 'badge--whisper'
-                                    : item.inVillage
-                                      ? 'badge--village'
-                                      : 'badge--outside'
+                                  item.marketStatus === 'sold' ? '' : 'badge--village'
                                 }`}
                               >
-                                {item.marketStatus === 'off-market'
-                                  ? 'Off-Market Whisper'
-                                  : item.marketStatus === 'sold'
-                                    ? 'Sold Comp'
-                                    : item.marketStatus === 'contingent'
-                                      ? 'In Contract'
-                                      : item.inVillage
-                                        ? 'Inc. Village ✓'
-                                        : 'Outside Village'}
+                                {item.marketStatus === 'sold' ? 'Sold' : 'Bellport Village'}
                               </span>
 
-                              <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto' }}>
-                                <button
-                                  type="button"
-                                  className="status-dot-btn"
-                                  title="Save to Favorites (feeds Architectural Taste Profile)"
-                                  aria-label={`Favorite ${item.address}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleFavorite(item.id);
-                                  }}
-                                  style={{ padding: '5px 8px' }}
-                                >
-                                  <Heart
-                                    size={14}
-                                    fill={item.isFavorite ? 'var(--g-red)' : 'none'}
-                                    color={item.isFavorite ? 'var(--g-red)' : 'currentColor'}
-                                  />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="status-dot-btn"
-                                  title="Click to cycle shortlist status"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateListing(item.id, {
-                                      userStatus: NEXT_STATUS[item.userStatus],
-                                    });
-                                  }}
-                                >
-                                  <span className={`status-dot status-dot--${item.userStatus}`} />
-                                  <span>{STATUS_LABEL[item.userStatus]}</span>
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                className="status-dot-btn"
+                                aria-label={`Favorite ${item.address}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(item.id);
+                                }}
+                                style={{ padding: '5px 8px', pointerEvents: 'auto' }}
+                              >
+                                <Heart
+                                  size={14}
+                                  fill={item.isFavorite ? 'var(--g-red)' : 'none'}
+                                  color={item.isFavorite ? 'var(--g-red)' : 'currentColor'}
+                                />
+                              </button>
                             </div>
 
                             {photoCount > 1 && (
@@ -1133,8 +889,11 @@ export const App: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-                                  Zone {item.floodZone}
+                                <span
+                                  className="priv-val"
+                                  style={{ fontSize: 12, color: 'var(--ink-2)', fontFamily: 'var(--font-mono)' }}
+                                >
+                                  Est. ${(deal.estimatedFairPrice / 1_000_000).toFixed(2)}M
                                 </span>
                               </div>
 
@@ -1147,43 +906,39 @@ export const App: React.FC = () => {
                               <div className="listing-card__sub">
                                 <span>{item.area}</span>
                                 <span>·</span>
-                                <span>{item.style}</span>
+                                <strong>{item.style}</strong>
                               </div>
                             </div>
 
-                            {/* Deal & Airbnb Rating Pills */}
+                            {/* Explicit Overpriced / Underpriced Rating & Amount */}
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <span
-                                className={`badge ${
-                                  deal.tone === 'green'
+                                className={`badge priv-val ${
+                                  deal.status === 'underpriced'
                                     ? 'badge--village'
-                                    : deal.tone === 'red'
+                                    : deal.status === 'overpriced'
                                       ? 'badge--outside'
                                       : ''
                                 }`}
-                                title={`Model benchmark: $${deal.estimatedFairPrice.toLocaleString()}`}
                               >
-                                Deal {deal.score} · {deal.tier}
-                              </span>
-
-                              <span
-                                className={`badge ${
-                                  airbnb.airbnbShortStayLegal ? '' : 'badge--outside'
-                                } priv-val`}
-                                title={airbnb.notes[0]}
-                              >
-                                {airbnb.airbnbShortStayLegal
-                                  ? `Airbnb ${airbnb.score} · ~$${Math.round(airbnb.estAugustGross / 1000)}k Aug`
-                                  : '30d Min Law'}
+                                {deal.badgeLabel}
                               </span>
                             </div>
+
+                            {/* Brief Architectural Style Description */}
+                            <p className="listing-card__headline" style={{ margin: 0 }}>
+                              <HighlightedText
+                                text={item.styleSummary ?? item.headline}
+                                query={filters.q}
+                              />
+                            </p>
 
                             <div className="listing-card__specs">
                               <div>
                                 <strong>
-                                  {item.beds} / {item.baths}
+                                  {item.beds}/{item.baths}
                                 </strong>
-                                <span>Beds/Baths</span>
+                                <span>Bd/Ba</span>
                               </div>
                               <div>
                                 <strong>{item.sqft > 0 ? item.sqft.toLocaleString() : '—'}</strong>
@@ -1191,24 +946,12 @@ export const App: React.FC = () => {
                               </div>
                               <div>
                                 <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
-                                <span>$/Sq Ft</span>
+                                <span>$/Ft²</span>
                               </div>
                               <div>
                                 <strong>{item.lotAcres}</strong>
                                 <span>Acres</span>
                               </div>
-                            </div>
-
-                            <p className="listing-card__headline">
-                              <HighlightedText text={item.headline} query={filters.q} />
-                            </p>
-
-                            <div className="listing-card__tags">
-                              {item.features.slice(0, 4).map((tag) => (
-                                <span key={tag} className="tag-pill">
-                                  <HighlightedText text={tag} query={filters.q} />
-                                </span>
-                              ))}
                             </div>
                           </div>
                         </article>
@@ -1220,21 +963,19 @@ export const App: React.FC = () => {
                     <table className="listings-table">
                       <thead>
                         <tr>
-                          <th>Save</th>
-                          <th>Address &amp; Lane</th>
-                          <th>Price &amp; Cuts</th>
-                          <th>Deal Rating</th>
-                          <th>Airbnb / Summer</th>
-                          <th>Beds/Baths</th>
+                          <th>♥</th>
+                          <th>Address &amp; Architectural Style</th>
+                          <th>Price</th>
+                          <th>Valuation Rating</th>
+                          <th>Bd/Ba</th>
                           <th>Sq Ft</th>
-                          <th>$/Sq Ft</th>
+                          <th>$/Ft²</th>
                           <th>Acres</th>
                         </tr>
                       </thead>
                       <tbody>
                         {visibleListings.map((item) => {
                           const deal = evaluateGoodDeal(item, allListings);
-                          const airbnb = evaluateAirbnbViability(item);
                           const pStats = getPriceChangeStats(item);
 
                           return (
@@ -1262,41 +1003,32 @@ export const App: React.FC = () => {
                                   <HighlightedText text={item.address} query={filters.q} />
                                 </strong>
                                 <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                                  {item.area} · {item.inVillage ? 'Inc. Village ✓' : 'Outside'}
+                                  {item.style} — {item.styleSummary ?? item.headline}
                                 </span>
                               </td>
                               <td className="num priv-val">
                                 <strong>${item.price.toLocaleString()}</strong>
                                 {pStats.totalDropDollar > 0 && (
                                   <div style={{ fontSize: 11, color: 'var(--g-green-600)' }}>
-                                    ↓ ${Math.round(pStats.totalDropDollar / 1000)}k (-
-                                    {pStats.totalDropPct}%)
+                                    ↓ ${Math.round(pStats.totalDropDollar / 1000)}k
                                   </div>
                                 )}
                               </td>
                               <td>
                                 <span
-                                  className={`badge ${
-                                    deal.tone === 'green' ? 'badge--village' : ''
+                                  className={`badge priv-val ${
+                                    deal.status === 'underpriced'
+                                      ? 'badge--village'
+                                      : deal.status === 'overpriced'
+                                        ? 'badge--outside'
+                                        : ''
                                   }`}
                                 >
-                                  {deal.score} · {deal.tier}
+                                  {deal.badgeLabel}
                                 </span>
                               </td>
-                              <td className="priv-val">
-                                {airbnb.airbnbShortStayLegal ? (
-                                  <span>
-                                    {airbnb.score}/100 (~${Math.round(airbnb.estAugustGross / 1000)}k
-                                    Aug)
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--g-red-600)', fontSize: 12 }}>
-                                    30-Night Min Law
-                                  </span>
-                                )}
-                              </td>
                               <td className="num">
-                                {item.beds} / {item.baths}
+                                {item.beds}/{item.baths}
                               </td>
                               <td className="num">
                                 {item.sqft > 0 ? item.sqft.toLocaleString() : '—'}
@@ -1315,7 +1047,7 @@ export const App: React.FC = () => {
               </div>
             </section>
 
-            {/* D3 Price vs. Space Valuation Scatterplot */}
+            {/* Price vs. Space Valuation Scatterplot */}
             <PriceSpaceChart
               listings={visibleListings}
               privacyBlur={appState.preferences.privacyBlur}
@@ -1324,28 +1056,6 @@ export const App: React.FC = () => {
           </>
         )}
       </main>
-
-      {/* Subtle Bottom-Left Sample Data Pill (auto-hides once real synced data replaces seed) */}
-      {hasSampleData && (
-        <div className="sample-pill" role="status">
-          <Sparkles size={13} color="var(--accent)" />
-          <span>Sample data ({sampleCount})</span>
-          <button
-            type="button"
-            onClick={() => setSyncOpen(true)}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--accent)',
-              fontWeight: 500,
-              padding: 0,
-              fontSize: 12,
-            }}
-          >
-            Connect Live Sync
-          </button>
-        </div>
-      )}
 
       {/* Quiet Bottom-Right Floating Corner Dock */}
       <CornerDock

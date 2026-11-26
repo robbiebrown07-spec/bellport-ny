@@ -1,5 +1,4 @@
 import type {
-  BellportMicroArea,
   Listing,
   PricePoint,
   StreetAlertRule,
@@ -9,8 +8,12 @@ export interface DealEvaluation {
   score: number; // 0-100
   tier: 'Strong Value' | 'Fair Ask' | 'Full Premium' | 'Overpriced';
   tone: 'green' | 'blue' | 'yellow' | 'red';
+  status: 'underpriced' | 'overpriced' | 'fair';
+  diffDollar: number; // listing.price - estimatedFairPrice (+ overpriced, - underpriced)
+  diffPct: number; // rounded integer %
+  badgeLabel: string; // e.g. "Underpriced by $151k (-16%)" or "Overpriced by $400k (+11%)"
   estimatedFairPrice: number;
-  deltaPct: number; // Negative means priced below estimated fair value (good deal)
+  deltaPct: number;
   reasons: string[];
 }
 
@@ -47,14 +50,6 @@ export interface TriggeredStreetAlert {
     dropAmount: number;
   }>;
 }
-
-const AREA_BASELINE_PPSF: Record<BellportMicroArea, number> = {
-  'Historic Lanes': 815,
-  'Country Club & Golf': 720,
-  'Village Center': 685,
-  'East Lanes & Circuit': 615,
-  'Outside Village (11713)': 480,
-};
 
 export function getPriceChangeStats(listing: Listing): {
   history: PricePoint[];
@@ -108,115 +103,127 @@ export function getPriceChangeStats(listing: Listing): {
   };
 }
 
-export function evaluateGoodDeal(listing: Listing, allListings: Listing[]): DealEvaluation {
-  const areaPeers = allListings.filter((l) => l.area === listing.area && l.sqft > 0);
-  const peerMedianPpsf =
-    areaPeers.length >= 2
-      ? areaPeers
-          .map((l) => l.price / l.sqft)
-          .sort((a, b) => a - b)[Math.floor(areaPeers.length / 2)]
-      : AREA_BASELINE_PPSF[listing.area];
-
-  const basePpsf = (AREA_BASELINE_PPSF[listing.area] * 0.6 + peerMedianPpsf * 0.4);
-  const effectiveSqft = listing.sqft > 0 ? listing.sqft : 2200;
-  let fairValue = effectiveSqft * basePpsf;
-
+export function evaluateGoodDeal(listing: Listing, _allListings: Listing[]): DealEvaluation {
+  const effectiveSqft = listing.sqft > 0 ? listing.sqft : 1800;
+  const addrL = listing.address.toLowerCase();
   const text = `${listing.description} ${listing.features.join(' ')}`.toLowerCase();
+  const lat = listing.latitude ?? 40.758;
   const reasons: string[] = [];
 
-  // Amenity & parcel adjustments
+  // Incorporated Bellport Village lane-tier land floor + marginal interior $/sq ft
+  let landBase = 345_000;
+  let marginalPpsf = 245;
+  if (
+    /bellport\s+ln|browns\s+ln|otis|s\s+country|s\s+howells|brookside|oak\s+meadow/.test(addrL) ||
+    (lat < 40.7555 && !/n\s+howells/.test(addrL))
+  ) {
+    landBase = 560_000;
+    marginalPpsf = 470;
+    reasons.push('South-of-Main / estate lane benchmark');
+  } else if (/third\s+st|2nd\s+st|country\s+club|n\s+howells|station\s+rd/.test(addrL)) {
+    landBase = 430_000;
+    marginalPpsf = 315;
+    reasons.push('Mid-Village & Country Club lane benchmark');
+  } else {
+    reasons.push('North-Village residential lane benchmark');
+  }
+
+  let fairValue = landBase + effectiveSqft * marginalPpsf;
+
+  // Bathroom count adjustment relative to 2.0-bath norm
+  const bathAdj = Math.max(-75_000, Math.min(180_000, (listing.baths - 2.0) * 55_000));
+  fairValue += bathAdj;
+
+  // Lot acreage adjustment relative to 0.30-acre Village parcel
+  const acreAdj = Math.max(-45_000, Math.min(850_000, (listing.lotAcres - 0.3) * 520_000));
+  fairValue += acreAdj;
+  if (listing.lotAcres >= 0.6) {
+    reasons.push(`${listing.lotAcres}-acre Village parcel premium`);
+  }
+
+  // Waterfront / private creek dock & historic Bellport Ln scarcity
+  if (/private\s+dock|howells\s+creek|waterfront\s+acre|bulkhead/.test(text)) {
+    fairValue += 520_000;
+    reasons.push('Waterfront frontage & private dock scarcity');
+  }
+  if (/bellport\s+ln/.test(addrL)) {
+    fairValue += 420_000;
+    reasons.push('Prime Historic District Bellport Lane pedigree');
+  }
+
+  // Pool & detached guest quarters
   const hasPool =
-    /gunite\s+pool|heated\s+pool|saltwater\s+pool|\binground\s+pool\b/.test(text) ||
-    listing.features.some((f) => f === 'pool' || f.includes('gunite pool'));
-  const hasWaterfront = /direct\s+waterfront|bulkhead|135\s+feet|bayfront/.test(text) || listing.archetype === 'bayfront';
-  const hasGuestCottage = /guest\s+(?:cottage|house)|carriage\s+barn\s+studio/.test(text);
-  const isTurnkey = /renovated|turnkey|chef'?s\s+kitchen|202[2-6]/.test(text);
-  const needsWork = /fixer|cosmetic\s+reimagin|needs/.test(text);
-
-  if (hasWaterfront) {
-    fairValue += 1_350_000;
-    reasons.push('Direct Bellport Bay frontage & bulkhead scarcity');
-  }
+    /gunite\s+pool|in-ground\s+pool|in\s+ground\s+pool|swimming\s+pool|heated\s+pool|large\s+pool/.test(
+      text
+    ) || listing.features.some((f) => f === 'pool' || f.includes('gunite pool'));
   if (hasPool) {
-    fairValue += 175_000;
-    reasons.push('Existing heated pool (~$175k build value)');
-  } else if (/pool\s+permit/.test(text)) {
-    fairValue += 45_000;
-    reasons.push('Pool permits already approved');
+    fairValue += 165_000;
+    reasons.push('In-ground pool (+$165k Village comp value)');
   }
 
-  if (hasGuestCottage) {
-    fairValue += 185_000;
-    reasons.push('Separate guest cottage / carriage studio');
+  if (/separate\s+living\s+quarters|separate\s+cedar-clad\s+building|outbuilding\/barn/.test(text)) {
+    fairValue += 85_000;
+    reasons.push('Detached studio / guest quarters');
   }
 
-  // Lot size delta vs 0.48-acre Village norm
-  const acreDiff = listing.lotAcres - 0.48;
-  fairValue += Math.max(-140_000, Math.min(280_000, acreDiff * 360_000));
-  if (listing.lotAcres >= 0.7) {
-    reasons.push(`Generous ${listing.lotAcres}-acre parcel for the Village`);
+  // Era & condition
+  if (listing.yearBuilt >= 2020) {
+    fairValue *= 1.1;
+    reasons.push(`Recent ${listing.yearBuilt} construction`);
+  } else if (/renovated|brand-new\s+chef|soapstone|pristine|turnkey/.test(text)) {
+    fairValue *= 1.04;
+    reasons.push('Updated finishes & mechanicals');
+  } else if (/needs\s+some\s+tlc|fixer/.test(text)) {
+    fairValue *= 0.78;
+    reasons.push('Needs renovation capex');
   }
 
-  if (isTurnkey) {
-    fairValue *= 1.06;
-    reasons.push('Turnkey / renovated mechanicals & finishes');
-  } else if (needsWork) {
-    fairValue *= 0.87;
-    reasons.push('Requires cosmetic/renovation capex');
-  }
-
-  if (listing.floodZone !== 'X') {
-    fairValue *= 0.93;
-    reasons.push(`Flood Zone ${listing.floodZone} insurance & elevation check`);
-  } else if (listing.inVillage) {
-    reasons.push('High-and-dry Flood Zone X inside Village limits');
-  }
-
-  if (!listing.inVillage) {
-    fairValue *= 0.88;
-    reasons.push('Outside Incorporated Village (no Ho-Hum ferry pass)');
+  if (listing.marketStatus === 'sold') {
+    const soldYr = Number((listing.listedDate || '2024').slice(0, 4));
+    const yrFactor: Record<number, number> = {
+      2021: 0.52,
+      2022: 0.68,
+      2023: 0.84,
+      2024: 0.94,
+      2025: 0.97,
+    };
+    fairValue *= yrFactor[soldYr] ?? 1.0;
   }
 
   const estimatedFairPrice = Math.round(fairValue / 5000) * 5000;
-  const deltaPct = Number(
-    (((listing.price - estimatedFairPrice) / estimatedFairPrice) * 100).toFixed(1)
-  );
+  const diffDollar = listing.price - estimatedFairPrice;
+  const deltaPct = Number(((diffDollar / estimatedFairPrice) * 100).toFixed(1));
+  const diffPct = Math.round((diffDollar / estimatedFairPrice) * 100);
+  const absK = Math.max(5, Math.round(Math.abs(diffDollar) / 1000));
+  const amtText = absK >= 1000 ? `$${(Math.abs(diffDollar) / 1_000_000).toFixed(2)}M` : `$${absK}k`;
 
-  // Convert valuation gap + negotiation signals into 0-100 Deal Score
-  let score = Math.round(70 - deltaPct * 1.45);
-
-  const { totalDropPct, cutCount } = getPriceChangeStats(listing);
-  if (cutCount > 0) {
-    score += Math.min(8, Math.round(totalDropPct * 0.7));
-    reasons.push(`Price already cut ${totalDropPct}% (${cutCount}x)`);
-  }
-  if (listing.daysOnMarket >= 60 && listing.marketStatus === 'active') {
-    score += 4;
-    reasons.push(`${listing.daysOnMarket} days on market adds buyer leverage`);
-  }
-
-  score = Math.max(22, Math.min(97, score));
-
-  let tier: DealEvaluation['tier'] = 'Fair Ask';
+  let status: DealEvaluation['status'] = 'fair';
+  let badgeLabel = `Fairly Priced (Est. $${(estimatedFairPrice / 1_000_000).toFixed(2)}M)`;
   let tone: DealEvaluation['tone'] = 'blue';
-  if (score >= 78) {
-    tier = 'Strong Value';
+  let tier: DealEvaluation['tier'] = 'Fair Ask';
+
+  if (diffDollar <= -15_000) {
+    status = 'underpriced';
+    badgeLabel = `Underpriced by ${amtText} (${diffPct}%)`;
     tone = 'green';
-  } else if (score >= 64) {
-    tier = 'Fair Ask';
-    tone = 'blue';
-  } else if (score >= 50) {
-    tier = 'Full Premium';
-    tone = 'yellow';
-  } else {
-    tier = 'Overpriced';
-    tone = 'red';
+    tier = 'Strong Value';
+  } else if (diffDollar >= 15_000) {
+    status = 'overpriced';
+    badgeLabel = `Overpriced by ${amtText} (+${diffPct}%)`;
+    tone = diffPct >= 12 ? 'red' : 'yellow';
+    tier = diffPct >= 12 ? 'Overpriced' : 'Full Premium';
   }
+
+  const score = Math.max(22, Math.min(97, Math.round(70 - deltaPct * 1.2)));
 
   return {
     score,
     tier,
     tone,
+    status,
+    diffDollar,
+    diffPct,
+    badgeLabel,
     estimatedFairPrice,
     deltaPct,
     reasons: reasons.slice(0, 4),
