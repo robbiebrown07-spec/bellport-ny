@@ -1118,7 +1118,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       const [hhX, hhY] = projectWith(-72.9278, 40.7138, width, height, view);
       if (canPlace(hhX, hhY, 170, 26)) {
         ctx.save();
-        ctx.font = '700 11.5px "Google Sans Text", -apple-system, sans-serif';
+        ctx.font = '700 11.5px "Plus Jakarta Sans", -apple-system, sans-serif';
         ctx.lineWidth = 3.8;
         ctx.strokeStyle = 'rgba(255,255,255,0.96)';
         ctx.strokeText('Ho-Hum Beach (Bay → Ocean)', hhX, hhY);
@@ -1131,7 +1131,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       const [fyX, fyY] = projectWith(-72.9318, 40.7295, width, height, view);
       if (canPlace(fyX, fyY, 150, 22)) {
         ctx.save();
-        ctx.font = '500 10.5px "Google Sans Text", -apple-system, sans-serif';
+        ctx.font = '500 10.5px "Plus Jakarta Sans", -apple-system, sans-serif';
         ctx.lineWidth = 3.2;
         ctx.strokeStyle = 'rgba(255,255,255,0.94)';
         ctx.strokeText('Whalehouse Pt Ferry', fyX, fyY);
@@ -1144,7 +1144,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     // Fire Island & Ocean Labels when zoomed out
     const [fiX, fiY] = projectWith(-72.952, 40.7085, width, height, view);
     if (canPlace(fiX, fiY, 100, 20)) {
-      ctx.font = '600 11px "Google Sans Text", sans-serif';
+      ctx.font = '600 11px "Plus Jakarta Sans", sans-serif';
       ctx.lineWidth = 3;
       ctx.strokeStyle = isSat ? 'rgba(20,30,40,0.8)' : 'rgba(255,255,255,0.9)';
       ctx.strokeText('Fire Island', fiX, fiY);
@@ -1154,21 +1154,21 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
     const [ocX, ocY] = projectWith(-72.932, 40.701, width, height, view);
     if (canPlace(ocX, ocY, 115, 20)) {
-      ctx.font = 'italic 500 11px "Google Sans Text", -apple-system, sans-serif';
+      ctx.font = 'italic 500 11px "Plus Jakarta Sans", -apple-system, sans-serif';
       ctx.fillStyle = isSat ? 'rgba(224,242,254,0.9)' : '#3b6b8f';
       ctx.fillText('Atlantic Ocean', ocX, ocY);
     }
 
     const [bayX, bayY] = projectWith(-72.9435, 40.7375, width, height, view);
     if (canPlace(bayX, bayY, 95, 20)) {
-      ctx.font = 'italic 500 11px "Google Sans Text", -apple-system, sans-serif';
+      ctx.font = 'italic 500 11px "Plus Jakarta Sans", -apple-system, sans-serif';
       ctx.fillStyle = isSat ? 'rgba(224,242,254,0.92)' : '#487699';
       ctx.fillText('Bellport Bay', bayX, bayY);
     }
 
     // Beautiful Street Section Callout Labels when Beautiful Streets filter is active even at zoom=1.0
     if (activeBeautifulSections.length > 0 && view.zoom < 1.28) {
-      ctx.font = '600 10.5px "Google Sans Text", -apple-system, sans-serif';
+      ctx.font = '600 10.5px "Plus Jakarta Sans", -apple-system, sans-serif';
       for (const sec of activeBeautifulSections) {
         const [sx, sy] = projectWith(sec.labelLon, sec.labelLat, width, height, view);
         const tw = ctx.measureText(sec.shortName).width;
@@ -1196,7 +1196,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
     // Viewport-Clipped Clickable Road Names (iconic Village streets visible right at default zoom >= 0.98!)
     if (view.zoom >= 0.98) {
-      ctx.font = '500 10.5px "Google Sans Text", -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.font = '500 10.5px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif';
       const seenNames = new Set<string>();
       const ordered = [...bundle.streets].sort((a, b) => {
         const ap =

@@ -3,6 +3,7 @@ import { Shape } from './Shapes';
 
 interface AppMarkProps {
   size?: number;
+  className?: string;
 }
 
 /**
@@ -10,74 +11,80 @@ interface AppMarkProps {
  * Crisp white geometric shingled gable & chimney over a muted dune-brass
  * shoreline horizon and soft bay ripple inside a hairline maritime frame.
  */
-export const AppMark: React.FC<AppMarkProps> = ({ size = 38 }) => {
+export const AppMark: React.FC<AppMarkProps> = ({ size = 48, className }) => {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 38 38"
+      viewBox="0 0 48 48"
       fill="none"
       aria-hidden="true"
+      className={className}
       style={{ flexShrink: 0 }}
     >
       {/* Subtle hairline architectural frame */}
       <rect
         x="0.75"
         y="0.75"
-        width="36.5"
-        height="36.5"
-        rx="8.5"
-        fill="rgba(255, 255, 255, 0.04)"
-        stroke="rgba(255, 255, 255, 0.2)"
-        strokeWidth="1"
+        width="46.5"
+        height="46.5"
+        rx="11"
+        fill="rgba(255, 255, 255, 0.045)"
+        stroke="rgba(255, 255, 255, 0.22)"
+        strokeWidth="1.1"
       />
 
       {/* Historic steep-pitched Bellport gable & chimney */}
       <path
-        d="M9.5 18.4L19 9.8L28.5 18.4"
+        d="M11.5 23.0L24 12.0L36.5 23.0"
         stroke="#ffffff"
-        strokeWidth="1.7"
+        strokeWidth="1.95"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M23.6 10.6V14.1"
+        d="M29.8 13.0V17.6"
         stroke="#ffffff"
-        strokeWidth="1.7"
+        strokeWidth="1.95"
         strokeLinecap="round"
       />
       <path
-        d="M12.3 16.0V23.8H25.7V16.0"
+        d="M15.2 20.0V30.0H32.8V20.0"
         stroke="#ffffff"
-        strokeWidth="1.55"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
 
       {/* Divided-light window */}
       <rect
-        x="17.1"
-        y="16.9"
-        width="3.8"
-        height="4.3"
-        rx="0.5"
-        stroke="rgba(255, 255, 255, 0.9)"
-        strokeWidth="1.25"
+        x="21.4"
+        y="20.8"
+        width="5.2"
+        height="5.8"
+        rx="0.65"
+        stroke="rgba(255, 255, 255, 0.92)"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M24 20.8V26.6M21.4 23.7H26.6"
+        stroke="rgba(255, 255, 255, 0.65)"
+        strokeWidth="1.05"
       />
 
       {/* Muted Dune-Brass Shoreline Horizon */}
       <path
-        d="M7.5 27.1C11.4 25.8 15.3 25.8 19.0 27.1C22.7 28.4 26.6 28.4 30.5 27.0"
+        d="M9.2 34.2C14.1 32.6 19.1 32.6 24.0 34.2C28.8 35.8 33.8 35.8 38.8 34.0"
         stroke="#e2c07d"
-        strokeWidth="1.65"
+        strokeWidth="1.85"
         strokeLinecap="round"
       />
 
       {/* Soft Bellport Bay Ripple */}
       <path
-        d="M10.8 30.3C13.9 29.4 16.8 29.4 19.6 30.3C22.4 31.2 25.3 31.2 28.0 30.2"
-        stroke="rgba(165, 198, 228, 0.78)"
-        strokeWidth="1.35"
+        d="M13.5 38.2C17.4 37.1 21.1 37.1 24.7 38.2C28.3 39.3 32.0 39.3 35.4 38.1"
+        stroke="rgba(165, 198, 228, 0.8)"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
     </svg>
