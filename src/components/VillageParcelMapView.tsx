@@ -1154,14 +1154,14 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
     const [ocX, ocY] = projectWith(-72.932, 40.701, width, height, view);
     if (canPlace(ocX, ocY, 115, 20)) {
-      ctx.font = 'italic 11.5px Georgia, serif';
+      ctx.font = 'italic 500 11px "Google Sans Text", -apple-system, sans-serif';
       ctx.fillStyle = isSat ? 'rgba(224,242,254,0.9)' : '#3b6b8f';
       ctx.fillText('Atlantic Ocean', ocX, ocY);
     }
 
     const [bayX, bayY] = projectWith(-72.9435, 40.7375, width, height, view);
     if (canPlace(bayX, bayY, 95, 20)) {
-      ctx.font = 'italic 11.5px Georgia, serif';
+      ctx.font = 'italic 500 11px "Google Sans Text", -apple-system, sans-serif';
       ctx.fillStyle = isSat ? 'rgba(224,242,254,0.92)' : '#487699';
       ctx.fillText('Bellport Bay', bayX, bayY);
     }

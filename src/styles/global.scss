@@ -106,7 +106,7 @@ mark.kw-hit {
   font-weight: 500;
 }
 
-// Sticky Two-Zone TopBar in Deep Maritime Navy (#0f2537) with Editorial Serif Masthead
+// Sticky Two-Zone TopBar in Deep Maritime Navy (#0f2537)
 .topbar {
   position: sticky;
   top: 0;
@@ -162,11 +162,11 @@ mark.kw-hit {
   }
 
   &__title {
-    font-family: 'Newsreader', Georgia, serif;
-    font-weight: 500;
-    font-size: 23.5px;
-    line-height: 1.08;
-    letter-spacing: -0.015em;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 20px;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     white-space: nowrap;
     color: #ffffff;
   }
