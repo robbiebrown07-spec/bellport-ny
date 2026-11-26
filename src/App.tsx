@@ -290,10 +290,14 @@ export const App: React.FC = () => {
 
         {activeView === 'favorites' && (
           <FavoritesAndTasteView
-            listings={allListings}
+            listings={catalog.length > 0 ? catalog.map(toPseudoListing) : allListings}
             aiTasteMemo={appState.aiTasteMemo}
             onOpenListing={(id) => setSelectedParcelOrListingId(id)}
-            onToggleFavorite={(id) => toggleHomeFavorite(id, id)}
+            onToggleFavorite={(id) => {
+              const found = catalog.find((h) => h.parcelId === id || h.listingId === id || h.uid === id);
+              if (found) toggleHomeFavorite(found.parcelId, found.listingId);
+              else toggleHomeFavorite(id, id);
+            }}
             onUpdateAiTasteMemo={(memo) =>
               setAppState((prev) => (prev ? { ...prev, aiTasteMemo: memo } : prev))
             }
@@ -473,6 +477,11 @@ export const App: React.FC = () => {
 
             <section className="results-band" aria-label="Bellport Village properties">
               <div className="container">
+                <div style={{ marginBottom: 14 }}>
+                  <span className="eyebrow" style={{ marginBottom: 2 }}>
+                    Village Directory
+                  </span>
+                </div>
                 {matchedHomes.length === 0 ? (
                   <div className="empty-state">
                     <p style={{ color: 'var(--ink-2)', marginBottom: 12 }}>
@@ -513,7 +522,7 @@ export const App: React.FC = () => {
                               <span
                                 className="badge"
                                 style={{
-                                  background: 'rgba(255,255,255,0.92)',
+                                  background: 'rgba(255,255,255,0.94)',
                                   color: 'var(--ink)',
                                 }}
                               >
@@ -548,8 +557,8 @@ export const App: React.FC = () => {
                                 background: h.isForSale
                                   ? '#9be3b0'
                                   : h.hasPastSale
-                                    ? 'rgba(24,35,44,0.82)'
-                                    : 'rgba(255,255,255,0.9)',
+                                    ? 'rgba(32,33,36,0.82)'
+                                    : 'rgba(255,255,255,0.92)',
                                 color: h.isForSale
                                   ? '#124d2c'
                                   : h.hasPastSale
@@ -564,6 +573,24 @@ export const App: React.FC = () => {
                                   ? `Sold ${h.soldYear ?? ''}`
                                   : 'Off-Market · Est. Value'}
                             </span>
+
+                            {h.photoSource && h.photoSource !== 'mls' && (
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  right: 10,
+                                  bottom: 10,
+                                  padding: '2px 7px',
+                                  borderRadius: 999,
+                                  fontSize: 10,
+                                  fontWeight: 500,
+                                  background: 'rgba(32,33,36,0.68)',
+                                  color: '#ffffff',
+                                }}
+                              >
+                                {h.photoSource === 'aerial' ? 'Aerial View' : 'Street View'}
+                              </span>
+                            )}
                           </div>
 
                           <div className="listing-card__body">

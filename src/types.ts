@@ -135,6 +135,9 @@ export interface VillageParcel {
   soldPrice?: number | null;
   listingId?: string | null;
   mlsPhotos: number;
+  mlsPhotoUrls?: string[];
+  photoUrl?: string;
+  photoSource?: 'mls' | 'streetview' | 'aerial';
   pastRemarks?: string | null;
   sourceUrl?: string | null;
   style?: string;

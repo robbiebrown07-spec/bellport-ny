@@ -175,6 +175,7 @@ export interface UnifiedHome {
   feats: string[];
   photos: string[];
   photoUrl?: string;
+  photoSource?: 'mls' | 'streetview' | 'aerial';
   archetype: ArchetypeIllustration;
   isFavorite: boolean;
   lat: number;
@@ -246,8 +247,21 @@ export function buildUnifiedVillageCatalog(
       styleSummary: linked?.styleSummary ?? linked?.headline ?? p.styleSummary ?? '',
       description: linked?.description ?? p.pastRemarks ?? p.styleSummary ?? '',
       feats: p.feats ?? [],
-      photos: linked?.photos ?? (linked?.photoUrl ? [linked.photoUrl] : []),
-      photoUrl: linked?.photos?.[0] ?? linked?.photoUrl,
+      photos: linked?.photos?.length
+        ? linked.photos
+        : linked?.photoUrl
+          ? [linked.photoUrl]
+          : p.mlsPhotoUrls?.length
+            ? p.mlsPhotoUrls
+            : p.photoUrl
+              ? [p.photoUrl]
+              : [],
+      photoUrl:
+        linked?.photos?.[0] ?? linked?.photoUrl ?? p.photoUrl ?? p.mlsPhotoUrls?.[0],
+      photoSource:
+        linked?.photos?.length || linked?.photoUrl
+          ? 'mls'
+          : (p.photoSource ?? 'streetview'),
       archetype:
         linked?.archetype ??
         (p.waterfront ? 'bayfront' : p.pool ? 'shingle-pool' : 'colonial'),

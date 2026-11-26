@@ -442,7 +442,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       });
       ctx.closePath();
     }
-    ctx.fillStyle = '#f8f7f3';
+    ctx.fillStyle = '#fafbfc';
     ctx.fill();
     ctx.restore();
 
@@ -532,8 +532,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           stroke = '#145a32';
           lw = 1.8;
         } else {
-          fill = '#bdd6ea';
-          stroke = '#1e3a4c';
+          fill = '#c2dbfd';
+          stroke = '#1a73e8';
           lw = 1.55;
         }
       }
@@ -554,7 +554,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           p.cat === 'for_sale'
             ? 'rgba(31, 122, 70, 0.35)'
             : isMatch
-              ? 'rgba(30, 58, 76, 0.32)'
+              ? 'rgba(26, 115, 232, 0.32)'
               : 'rgba(120, 132, 145, 0.28)';
         for (const br of p.bldgs) {
           traceRing(br);
@@ -613,7 +613,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         if (idx === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       });
-      ctx.strokeStyle = '#1e3a4c';
+      ctx.strokeStyle = '#1a73e8';
       ctx.lineWidth = 2.2;
       ctx.setLineDash([5, 4]);
       ctx.stroke();
@@ -650,7 +650,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     // Hovered & Selected Lot Outlines
     for (const [parcel, color, lw] of [
       [hoveredParcel, '#374151', 1.8],
-      [selectedParcel, '#1e3a4c', 2.8],
+      [selectedParcel, '#1a73e8', 2.8],
     ] as Array<[VillageParcel | null, string, number]>) {
       if (!parcel || parcel.underwater) continue;
       ctx.save();
@@ -1229,8 +1229,10 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           >
             {selectedPoi ? (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span className="badge">Village Landmark</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="eyebrow" style={{ marginBottom: 0 }}>
+                    Village Landmark
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -1247,25 +1249,33 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 <p style={{ fontSize: 13, lineHeight: 1.5 }}>{selectedPoi.desc}</p>
               </>
             ) : !selectedHome ? (
-              <div style={{ fontSize: 13, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span className="eyebrow" style={{ marginBottom: 0 }}>
+                  Parcel Explorer · 1,058 Homes
+                </span>
                 <h2 style={{ fontSize: 19, color: 'var(--ink)' }}>Click any home on the map</h2>
                 <p style={{ lineHeight: 1.55 }}>
                   Tap any light-green listing or any gray off-market home across Bellport Village to
-                  inspect its lot size, architectural profile, estimated value, and sale history.
+                  see its photograph, lot size, architectural profile, estimated value, and sale history.
                 </p>
               </div>
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <span className={`badge ${selectedHome.isForSale ? 'badge--village' : ''}`}>
-                      {selectedHome.isForSale
-                        ? 'For Sale'
-                        : selectedHome.hasPastSale
-                          ? `Sold ${selectedHome.soldYear}`
-                          : 'Off-Market Home'}
+                  <div>
+                    <span className="eyebrow" style={{ marginBottom: 6 }}>
+                      Selected Property
                     </span>
-                    <span className="badge">{selectedHome.area}</span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <span className={`badge ${selectedHome.isForSale ? 'badge--village' : ''}`}>
+                        {selectedHome.isForSale
+                          ? 'For Sale'
+                          : selectedHome.hasPastSale
+                            ? `Sold ${selectedHome.soldYear}`
+                            : 'Off-Market Home'}
+                      </span>
+                      <span className="badge">{selectedHome.area}</span>
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -1302,6 +1312,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 {selectedHome.photoUrl && (
                   <div
                     style={{
+                      position: 'relative',
                       borderRadius: 12,
                       overflow: 'hidden',
                       aspectRatio: '16 / 10',
@@ -1315,6 +1326,25 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                       alt={selectedHome.address}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
+                    <span
+                      style={{
+                        position: 'absolute',
+                        right: 8,
+                        bottom: 8,
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 500,
+                        background: 'rgba(32, 33, 36, 0.72)',
+                        color: '#ffffff',
+                      }}
+                    >
+                      {selectedHome.photoSource === 'mls'
+                        ? 'MLS Photo'
+                        : selectedHome.photoSource === 'aerial'
+                          ? 'Aerial View'
+                          : 'Google Street View'}
+                    </span>
                   </div>
                 )}
 

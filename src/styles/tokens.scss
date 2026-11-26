@@ -1,46 +1,46 @@
 :root {
-  // Cohesive Coastal Palette
-  --g-blue: #1e3a4c;
-  --g-blue-600: #1e3a4c;
-  --g-blue-700: #162c3a;
-  --g-blue-50: #e6eef3;
+  // Pure White Editorial Surface + Selective Signature Blue Accents
+  --g-blue: #4285f4;
+  --g-blue-600: #1a73e8;
+  --g-blue-700: #185abc;
+  --g-blue-50: #e8f0fe;
 
-  --g-red: #b53629;
-  --g-red-600: #a82a22;
-  --g-red-50: #fae8e6;
+  --g-red: #d93025;
+  --g-red-600: #b3261e;
+  --g-red-50: #fce8e6;
 
-  --g-yellow: #e0b84c;
-  --g-yellow-600: #b07412;
-  --g-yellow-700: #8f5d0a;
-  --g-yellow-50: #fbf1d8;
+  --g-yellow: #fbbc04;
+  --g-yellow-600: #b06000;
+  --g-yellow-700: #8f4d00;
+  --g-yellow-50: #fef7e0;
 
-  --g-green: #2c8a56;
-  --g-green-600: #1b653a;
-  --g-green-50: #e3f3e8;
+  --g-green: #34a853;
+  --g-green-600: #1e8e3e;
+  --g-green-50: #e6f4ea;
 
-  // Warm Sunlit Coastal Linen & Driftwood Scale
-  --grey-900: #18232c;
-  --grey-800: #2b3842;
-  --grey-700: #5f6b73;
-  --grey-500: #87929a;
-  --grey-300: #d4cfc3;
-  --grey-200: #e2ddd2;
-  --grey-100: #efece4;
-  --grey-50: #f6f4ef;
+  // Crisp Neutral White & Ink Scale
+  --grey-900: #202124;
+  --grey-800: #3c4043;
+  --grey-700: #5f6368;
+  --grey-500: #80868b;
+  --grey-300: #dadce0;
+  --grey-200: #e5e7eb;
+  --grey-100: #f1f3f4;
+  --grey-50: #f8f9fa;
   --white: #ffffff;
 
-  // Semantic Aliases
-  --bg: #f6f4ef;
-  --bg-band: #efece4;
+  // Semantic Aliases (Pure White Site Background + Selective Blue Accents)
+  --bg: #ffffff;
+  --bg-band: #ffffff;
   --surface: #ffffff;
-  --surface-subtle: #f6f4ef;
-  --ink: #18232c;
-  --ink-2: #5f6b73;
-  --ink-muted: #87929a;
-  --accent: #1e3a4c;
-  --accent-soft: #e6eef3;
-  --line: #e2ddd2;
-  --line-strong: #d4cfc3;
+  --surface-subtle: #f8f9fa;
+  --ink: #202124;
+  --ink-2: #5f6368;
+  --ink-muted: #80868b;
+  --accent: #1a73e8;
+  --accent-soft: #e8f0fe;
+  --line: #e5e7eb;
+  --line-strong: #dadce0;
 
   // Typography, Layout, Radii & Motion
   --font-display: Georgia, 'Iowan Old Style', 'Times New Roman', serif;

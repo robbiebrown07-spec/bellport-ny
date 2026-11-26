@@ -31,7 +31,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
       className={`topbar ${scrolled ? 'is-scrolled' : ''}`}
       style={{
         height: 68,
-        background: scrolled ? 'rgba(246, 244, 239, 0.94)' : 'rgba(246, 244, 239, 0.86)',
+        background: scrolled ? 'rgba(255, 255, 255, 0.96)' : 'rgba(255, 255, 255, 0.92)',
         backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--line)',
       }}
@@ -69,7 +69,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
           >
             Bellport NY
           </div>
-          <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, marginTop: 2 }}>
             Search for a beach house
           </div>
         </button>
@@ -99,7 +99,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
                     border: 'none',
                     fontSize: 13.5,
                     fontWeight: active ? 600 : 500,
-                    color: active ? 'var(--ink)' : 'var(--ink-2)',
+                    color: active ? 'var(--accent)' : 'var(--ink-2)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     transition: 'color 160ms ease',

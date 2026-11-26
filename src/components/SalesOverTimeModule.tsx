@@ -147,6 +147,9 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
         }}
       >
         <div>
+          <span className="eyebrow" style={{ marginBottom: 4 }}>
+            Market History · 2017–2026
+          </span>
           <h2 style={{ fontSize: 22, margin: 0 }}>Home Prices Over Time</h2>
           <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: '2px 0 0' }}>
             {filtered.length} closed Bellport Village sales (2017–2026)
