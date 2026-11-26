@@ -445,8 +445,17 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 11.5, color: 'var(--ink-2)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 16, height: 2.5, background: 'var(--accent)', borderRadius: 2 }} />
-            Bellport Village Annual Median
+            <span
+              style={{
+                width: 18,
+                height: 3,
+                background: (changePct ?? 0) < 0 ? '#d93025' : '#188038',
+                borderRadius: 2,
+              }}
+            />
+            <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
+              Bellport Village Annual Median
+            </strong>
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span
@@ -514,18 +523,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
               />
             )}
 
-            {/* Bellport Annual Median Trend Line */}
-            {yearlyMedians.length > 1 && (
-              <path
-                d={linePath}
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth={2.5}
-                opacity={0.92}
-              />
-            )}
-
-            {/* Individual Closed Sales (Click any dot to pin its address & home card below!) */}
+            {/* Individual Closed Sales (Rendered BELOW trend line so the green/red trend line cuts cleanly on top!) */}
             {filtered.map((s) => {
               const cx = xScale(dateToYearFloat(s.date));
               const cy = yScale(metric === 'ppsf' ? (s.ppsf ?? 0) : s.price);
@@ -538,9 +536,9 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                       cx={cx}
                       cy={cy}
                       r={11}
-                      fill="rgba(234, 67, 53, 0.22)"
-                      stroke="#ea4335"
-                      strokeWidth={1.8}
+                      fill="rgba(15, 37, 55, 0.16)"
+                      stroke="#0f2537"
+                      strokeWidth={2}
                       pointerEvents="none"
                     />
                   )}
@@ -548,8 +546,8 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                     cx={cx}
                     cy={cy}
                     r={isPinned ? 7.2 : isHov ? 6.8 : 4.5}
-                    fill={isPinned ? '#ea4335' : s.belowSC ? 'var(--accent)' : '#7baaf7'}
-                    fillOpacity={isPinned || isHov ? 1 : 0.72}
+                    fill={isPinned ? '#0f2537' : s.belowSC ? 'var(--accent)' : '#7baaf7'}
+                    fillOpacity={isPinned || isHov ? 1 : 0.68}
                     stroke="#ffffff"
                     strokeWidth={1.4}
                     style={{ cursor: 'pointer' }}
@@ -568,6 +566,29 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                 </g>
               );
             })}
+
+            {/* Bellport Annual Median Trend Line — Crisp Green (Rising) or Red (Falling) on top of dots with white halo! */}
+            {yearlyMedians.length > 1 && (
+              <g pointerEvents="none">
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth={5.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={0.92}
+                />
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke={(changePct ?? 0) < 0 ? '#d93025' : '#188038'}
+                  strokeWidth={3.1}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </g>
+            )}
           </g>
         </svg>
 

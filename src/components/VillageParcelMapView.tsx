@@ -122,11 +122,11 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
   const [dossiersByAddr, setDossiersByAddr] = useState<Record<string, OffMarketDossier>>({});
   const [dossierLoading, setDossierLoading] = useState(false);
 
-  // zoom = 1.0 fits 100% of mainland Bellport Village; zoom ~ 0.54 reveals Fire Island + Ho-Hum Beach + Ferry!
+  // zoom = 1.08 frames mainland Bellport Village cleanly; zoom = 0.54 reveals Private Beach (Ho-Hum) + Ferry!
   const [view, setView] = useState({
-    zoom: 1.0,
-    centerLon: -72.9416,
-    centerLat: 40.7532,
+    zoom: 1.08,
+    centerLon: -72.9412,
+    centerLat: 40.7536,
     bearing: 0,
   });
 
@@ -400,18 +400,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
 
       const [lon, lat] = unprojectWith(mx, my, rect.width, rect.height, viewRef.current);
 
-      // 2a. Check direct click on any Public Amenity or Commercial POI marker
-      for (const poi of bundle.pois) {
-        const [px, py] = projectWith(poi.lon, poi.lat, rect.width, rect.height, viewRef.current);
-        if (Math.hypot(mx - px, my - py) <= 9) {
-          setStreetSummary(null);
-          setSelectedPoi(poi);
-          setSelectedParcelId(poi.parcelId ?? null);
-          return;
-        }
-      }
-
-      // 2b. Check Ho-Hum Beach click when zoomed out to Fire Island
+      // 2. Check Private Beach (Ho-Hum) click when zoomed out to Fire Island
       if (
         bundle.hoHumBeachRings &&
         bundle.hoHumBeachRings.some((r) => pointInRing(lon, lat, r))
@@ -460,7 +449,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         );
       }
     },
-    [bundle, hitTestStreetLabel, projectWith, unprojectWith]
+    [bundle, hitTestStreetLabel, unprojectWith]
   );
 
   // Native non-passive touch handler for smooth 2-finger pinch-to-zoom + pan/twist + 1-finger tap
@@ -677,12 +666,30 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.fillRect(0, 0, width, height);
       drawGeorefImage(bayAerialImgRef.current, bundle.bayAerialBounds);
       drawGeorefImage(villageAerialImgRef.current, bundle.aerialBounds);
+
+      // Subtle exterior spotlight veil in Satellite mode so Bellport Village & Ho-Hum Beach stand out
+      if (bundle.boundaryRings && bundle.boundaryRings.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-20, -20, width + 40, height + 40);
+        for (const ring of bundle.boundaryRings) {
+          ring.forEach((pt, idx) => {
+            const [px, py] = projectWith(pt[0], pt[1], width, height, view);
+            if (idx === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
+        ctx.fill('evenodd');
+        ctx.restore();
+      }
     } else {
-      // Default Map Mode: Mainland background + Great South Bay & Atlantic Ocean water
-      ctx.fillStyle = '#dde1e5';
+      // Default Map Mode: Pure white/whisper-faint outside canvas so 100% of visual focus stays on Bellport Village!
+      ctx.fillStyle = '#fcfcfd';
       ctx.fillRect(0, 0, width, height);
 
-      // Paint Bellport Bay & Atlantic Ocean south of mainland shoreline (lat <= 40.7435)
+      // Soft Bellport Bay & Atlantic Ocean south of mainland shoreline
       const bayPoly = [
         [-73.06, 40.7445],
         [-72.85, 40.7445],
@@ -691,22 +698,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ];
       ctx.save();
       traceRing(bayPoly);
-      ctx.fillStyle = '#c6e2f5';
-      ctx.fill();
-      ctx.restore();
-
-      // Mainland Bellport Village crisp white base
-      ctx.save();
-      ctx.beginPath();
-      for (const ring of (bundle.boundaryRings ?? []).slice(0, 1)) {
-        ring.forEach((pt, idx) => {
-          const [px, py] = projectWith(pt[0], pt[1], width, height, view);
-          if (idx === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        });
-        ctx.closePath();
-      }
-      ctx.fillStyle = '#fafbfc';
+      ctx.fillStyle = '#dcebf7';
       ctx.fill();
       ctx.restore();
 
@@ -714,26 +706,78 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         ctx.save();
         for (const wr of bundle.waterRings) {
           traceRing(wr);
-          ctx.fillStyle = '#c6e2f5';
+          ctx.fillStyle = '#dcebf7';
           ctx.fill();
-          ctx.strokeStyle = '#9cc5e0';
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#c2d9ec';
+          ctx.lineWidth = 0.9;
           ctx.stroke();
         }
         ctx.restore();
       }
 
-      // Fire Island Barrier Island Shoreline (Flanking Otis Pike Wilderness & Western Fire Island)
+      // Fire Island Barrier Island Shoreline (faint warm dune outside Ho-Hum Beach)
       if (bundle.fireIslandRings && bundle.fireIslandRings.length > 0) {
         ctx.save();
         for (const fr of bundle.fireIslandRings) {
           traceRing(fr);
-          ctx.fillStyle = '#efe9da';
+          ctx.fillStyle = '#f3efe4';
           ctx.fill();
-          ctx.strokeStyle = '#cbbd9f';
-          ctx.lineWidth = 1.15;
+          ctx.strokeStyle = '#dfd7c5';
+          ctx.lineWidth = 1.0;
           ctx.stroke();
         }
+        ctx.restore();
+      }
+
+      // Faint context roads outside Bellport Village (before the white exterior veil!)
+      const bgRoadScale = Math.max(0.75, Math.min(2.6, Math.pow(view.zoom, 0.65)));
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const st of bundle.streets) {
+        const isArt = /Main St|Country Rd/i.test(st.name);
+        ctx.strokeStyle = isArt ? '#e2e6ec' : '#eaedf2';
+        ctx.lineWidth = (isArt ? 4.5 : 2.2) * bgRoadScale;
+        for (const seg of st.segments) {
+          if (seg.length < 2) continue;
+          ctx.beginPath();
+          seg.forEach((pt, idx) => {
+            const [px, py] = projectWith(pt[0], pt[1], width, height, view);
+            if (idx === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+
+      // Whisper-White Exterior Veil over everything outside Incorporated Bellport Village & Ho-Hum Beach
+      // (keeps Bay water gentle while turning surrounding unincorporated mainland nearly pure white!)
+      if (bundle.boundaryRings && bundle.boundaryRings.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-20, -20, width + 40, height + 40);
+        for (const ring of bundle.boundaryRings) {
+          ring.forEach((pt, idx) => {
+            const [px, py] = projectWith(pt[0], pt[1], width, height, view);
+            if (idx === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+        ctx.fill('evenodd');
+        ctx.restore();
+      }
+
+      // Mainland Bellport Village warm architectural parchment ground + subtle drop shadow
+      if (bundle.boundaryRings?.[0]) {
+        ctx.save();
+        traceRing(bundle.boundaryRings[0]);
+        ctx.shadowColor = 'rgba(15, 37, 55, 0.08)';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#f6f4ef';
+        ctx.fill();
         ctx.restore();
       }
     }
@@ -754,21 +798,21 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // Color every parcel lot
+    // Color every parcel lot inside Incorporated Bellport Village
     for (const p of bundle.parcels) {
       if (p.underwater) continue;
       const hObj = homeByParcelId.get(p.id);
       const isMatch = matchedIds.has(p.id);
       const dimmed = filtering && p.res && !isMatch;
 
-      let fill = isSat ? 'rgba(255,255,255,0.03)' : '#e6e8ec';
-      let stroke = isSat ? 'rgba(255,255,255,0.28)' : '#cfd4dc';
+      let fill = isSat ? 'rgba(255,255,255,0.03)' : '#ebe7de';
+      let stroke = isSat ? 'rgba(255,255,255,0.28)' : '#d5cfc3';
       let lw = isSat ? 0.55 : 0.65;
 
       if (!p.res) {
         if (p.poiKind === 'golf' || p.cls === '552') {
-          fill = isSat ? 'rgba(155, 227, 176, 0.18)' : '#d7f0d4';
-          stroke = isSat ? 'rgba(163, 211, 159, 0.55)' : '#a3d39f';
+          fill = isSat ? 'rgba(155, 227, 176, 0.18)' : '#d9eed5';
+          stroke = isSat ? 'rgba(163, 211, 159, 0.55)' : '#a5cfa0';
           lw = 0.9;
         } else if (p.poiKind === 'beach') {
           fill = isSat ? 'rgba(251, 240, 178, 0.45)' : '#fbf0b2';
@@ -780,18 +824,18 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           p.cls.startsWith('9') ||
           p.cls.startsWith('8')
         ) {
-          fill = isSat ? 'rgba(220, 236, 216, 0.15)' : '#dcecd8';
-          stroke = isSat ? 'rgba(178, 212, 174, 0.4)' : '#b2d4ae';
+          fill = isSat ? 'rgba(220, 236, 216, 0.15)' : '#deeed9';
+          stroke = isSat ? 'rgba(178, 212, 174, 0.4)' : '#b4d3b0';
           lw = 0.75;
         } else if (p.cls.startsWith('4') || p.poiKind === 'dining' || p.poiKind === 'shop') {
-          fill = isSat ? 'rgba(237, 234, 226, 0.16)' : '#edeae2';
-          stroke = isSat ? 'rgba(255,255,255,0.3)' : '#d5cfc2';
+          fill = isSat ? 'rgba(237, 234, 226, 0.16)' : '#e6e1d5';
+          stroke = isSat ? 'rgba(255,255,255,0.3)' : '#cec6b6';
           lw = 0.7;
         }
       } else if (p.cat === 'for_sale') {
-        fill = isSat ? 'rgba(105, 235, 148, 0.52)' : '#9be3b0';
-        stroke = isSat ? '#6ee798' : '#1f7a46';
-        lw = 1.35;
+        fill = isSat ? 'rgba(105, 235, 148, 0.58)' : '#7be098';
+        stroke = isSat ? '#6ee798' : '#145a32';
+        lw = 1.55;
       }
 
       if (isMatch && hObj) {
@@ -811,7 +855,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           stroke = isSat ? '#7dd3fc' : '#1e6b8c';
           lw = 1.65;
         } else if (p.cat === 'for_sale') {
-          fill = isSat ? 'rgba(105, 235, 148, 0.65)' : '#9be3b0';
+          fill = isSat ? 'rgba(105, 235, 148, 0.68)' : '#7be098';
           stroke = isSat ? '#86efac' : '#145a32';
           lw = 1.85;
         } else {
@@ -832,13 +876,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         ctx.stroke();
       }
 
-      if (!isSat && p.bldgs && p.bldgs.length > 0 && view.zoom >= 1.35) {
+      if (!isSat && p.bldgs && p.bldgs.length > 0 && view.zoom >= 0.95) {
         ctx.fillStyle =
           p.cat === 'for_sale'
-            ? 'rgba(31, 122, 70, 0.35)'
+            ? 'rgba(20, 90, 50, 0.32)'
             : isMatch
-              ? 'rgba(26, 115, 232, 0.32)'
-              : 'rgba(120, 132, 145, 0.28)';
+              ? 'rgba(26, 115, 232, 0.3)'
+              : 'rgba(100, 110, 122, 0.18)';
         for (const br of p.bldgs) {
           traceRing(br);
           ctx.fill();
@@ -847,18 +891,22 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // Roads (Cased White in Map mode; subtle translucent guide in Satellite mode)
+    // Crisp Village Roads Clipped Strictly Inside Mainland Bellport Village!
     const roadScale = Math.max(0.75, Math.min(2.6, Math.pow(view.zoom, 0.65)));
     if (!isSat) {
       ctx.save();
+      if (bundle.boundaryRings?.[0]) {
+        traceRing(bundle.boundaryRings[0]);
+        ctx.clip();
+      }
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       for (const st of bundle.streets) {
         const isArt = /Main St|Country Rd/i.test(st.name);
         const isCol = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(st.name);
-        ctx.strokeStyle = isArt ? '#dfd3ba' : '#d5d9df';
-        ctx.lineWidth = (isArt ? 6.4 : isCol ? 4.6 : 3.0) * roadScale;
+        ctx.strokeStyle = isArt ? '#d8ccb2' : '#d2cec4';
+        ctx.lineWidth = (isArt ? 6.2 : isCol ? 4.5 : 2.9) * roadScale;
         for (const seg of st.segments) {
           if (seg.length < 2) continue;
           ctx.beginPath();
@@ -874,8 +922,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       for (const st of bundle.streets) {
         const isArt = /Main St|Country Rd/i.test(st.name);
         const isCol = /Station Rd|Country Club|Bellport Ln|Howells|Circuit|Bieselin/i.test(st.name);
-        ctx.strokeStyle = isArt ? '#fbf4e2' : '#ffffff';
-        ctx.lineWidth = (isArt ? 4.8 : isCol ? 3.3 : 2.0) * roadScale;
+        ctx.strokeStyle = isArt ? '#fdf8ec' : '#ffffff';
+        ctx.lineWidth = (isArt ? 4.6 : isCol ? 3.2 : 2.0) * roadScale;
         for (const seg of st.segments) {
           if (seg.length < 2) continue;
           ctx.beginPath();
@@ -931,7 +979,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // Whalehouse Point Ferry Route (Bellport Village Marina <-> Ho-Hum Beach on Fire Island)
+    // Whalehouse Point Ferry Route (Bellport Village Marina <-> Private Ho-Hum Beach on Fire Island)
     if (bundle.ferryRoute && bundle.ferryRoute.waypoints.length >= 2) {
       const wps = bundle.ferryRoute.waypoints;
       ctx.save();
@@ -945,19 +993,19 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         if (idx === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       });
-      ctx.strokeStyle = isSat ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 4.6;
+      ctx.strokeStyle = isSat ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 4.4;
       ctx.stroke();
 
-      // Signature Blue nautical dashed ferry line
+      // Maritime Navy nautical dashed ferry line
       ctx.beginPath();
       wps.forEach((pt, idx) => {
         const [px, py] = projectWith(pt[0], pt[1], width, height, view);
         if (idx === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       });
-      ctx.strokeStyle = '#1a73e8';
-      ctx.lineWidth = 2.3;
+      ctx.strokeStyle = isSat ? '#93c5fd' : '#1a5fb4';
+      ctx.lineWidth = 2.1;
       ctx.setLineDash([6, 5]);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -966,8 +1014,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       for (const dock of [bundle.ferryRoute.northDock, bundle.ferryRoute.southDock]) {
         const [dx, dy] = projectWith(dock.lon, dock.lat, width, height, view);
         ctx.beginPath();
-        ctx.arc(dx, dy, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#1a73e8';
+        ctx.arc(dx, dy, 4.3, 0, Math.PI * 2);
+        ctx.fillStyle = '#0f2537';
         ctx.fill();
         ctx.lineWidth = 1.8;
         ctx.strokeStyle = '#ffffff';
@@ -976,7 +1024,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.restore();
     }
 
-    // Exterior Border of Mainland Incorporated Bellport Village + Crisp Bay-to-Ocean Border on Ho-Hum Beach
+    // Exterior Border of Mainland Incorporated Bellport Village (Maritime Navy) + Crisp Bay-to-Ocean Border on Ho-Hum Beach
     if (bundle.boundaryRings && bundle.boundaryRings.length > 0) {
       ctx.save();
       bundle.boundaryRings.forEach((ring, rIdx) => {
@@ -989,46 +1037,13 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          ctx.strokeStyle = isSat ? 'rgba(255,255,255,0.65)' : '#7d8790';
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = isSat ? 'rgba(255,255,255,0.75)' : 'rgba(15, 37, 55, 0.58)';
+          ctx.lineWidth = 1.75;
           ctx.setLineDash([6, 4]);
           ctx.stroke();
           ctx.setLineDash([]);
         }
       });
-      ctx.restore();
-    }
-
-    // Subtle Clickable Landmark Pins for Public Parks, Golf, Marina & Commercial Shops/Dining
-    if (bundle.pois && bundle.pois.length > 0) {
-      ctx.save();
-      for (const poi of bundle.pois) {
-        if (
-          view.zoom < 1.15 &&
-          (poi.kind === 'shop' || poi.kind === 'dining') &&
-          selectedPoi?.id !== poi.id
-        ) {
-          continue;
-        }
-        const [px, py] = projectWith(poi.lon, poi.lat, width, height, view);
-        if (px < 10 || px > width - 10 || py < 10 || py > height - 10) continue;
-        const isSel = selectedPoi?.id === poi.id;
-        const pinColor =
-          poi.kind === 'park' || poi.kind === 'golf'
-            ? '#1e8e3e'
-            : poi.kind === 'beach'
-              ? '#1a73e8'
-              : poi.kind === 'dining' || poi.kind === 'shop'
-                ? '#d97706'
-                : '#475569';
-        ctx.beginPath();
-        ctx.arc(px, py, isSel ? 6.2 : 3.8, 0, Math.PI * 2);
-        ctx.fillStyle = isSel ? '#ea4335' : pinColor;
-        ctx.fill();
-        ctx.lineWidth = isSel ? 2.2 : 1.5;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
-      }
       ctx.restore();
     }
 
@@ -1179,8 +1194,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       }
     }
 
-    // Viewport-Clipped Clickable Road Names on Zoom (zoom >= 1.28)
-    if (view.zoom >= 1.28) {
+    // Viewport-Clipped Clickable Road Names (iconic Village streets visible right at default zoom >= 0.98!)
+    if (view.zoom >= 0.98) {
       ctx.font = '500 10.5px "Google Sans Text", -apple-system, BlinkMacSystemFont, sans-serif';
       const seenNames = new Set<string>();
       const ordered = [...bundle.streets].sort((a, b) => {
@@ -1198,10 +1213,14 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       for (const st of ordered) {
         const cleanName = st.name.replace('Main St (S Country Rd)', 'Main St');
         if (seenNames.has(cleanName)) continue;
-        const isPri =
-          /Main St|Country Rd|Station Rd|Bellport Ln|Browns Ln|Livingston|Bell St|Hulse|Rogers|Academy|Country Club|Howells|Shore Rd|Circuit|Bieselin/i.test(
+        const isIconic =
+          /Main St|Station Rd|Bellport Ln|Browns Ln|Country Club|Howells|Shore Rd|Bieselin/i.test(
             st.name
           );
+        const isPri =
+          isIconic ||
+          /Livingston|Bell St|Hulse|Rogers|Academy|Circuit/i.test(st.name);
+        if (!isIconic && view.zoom < 1.28) continue;
         if (!isPri && view.zoom < 1.65) continue;
 
         let bestVis: Array<[number, number, number, number]> | null = null;
@@ -1321,7 +1340,6 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     matchedIds,
     projectWith,
     selectedParcel,
-    selectedPoi,
     unifiedFilters.belowSC,
     unifiedFilters.builtRecent,
     unifiedFilters.builtYears,
@@ -1467,13 +1485,28 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
   };
 
-  const showHoHumAndFerryView = () => {
+  const isBeachFerryView = view.zoom <= 0.68 && view.centerLat < 40.743;
+
+  const resetVillageOnlyView = () => {
     setView({
-      zoom: 0.54,
-      centerLon: -72.9365,
-      centerLat: 40.7355,
+      zoom: 1.08,
+      centerLon: -72.9412,
+      centerLat: 40.7536,
       bearing: 0,
     });
+  };
+
+  const togglePrivateBeachAndFerry = () => {
+    if (isBeachFerryView) {
+      resetVillageOnlyView();
+    } else {
+      setView({
+        zoom: 0.54,
+        centerLon: -72.9365,
+        centerLat: 40.7355,
+        bearing: 0,
+      });
+    }
   };
 
   const activeDossier = selectedParcel
@@ -1509,8 +1542,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   width: 11,
                   height: 11,
                   borderRadius: 3,
-                  background: '#9be3b0',
-                  border: '1px solid #1f7a46',
+                  background: '#7be098',
+                  border: '1px solid #145a32',
                 }}
               />
               For Sale
@@ -1521,8 +1554,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   width: 11,
                   height: 11,
                   borderRadius: 3,
-                  background: '#e6e8ec',
-                  border: '1px solid #cfd4dc',
+                  background: '#ebe7de',
+                  border: '1px solid #d5cfc3',
                 }}
               />
               Off-Market
@@ -1537,7 +1570,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                   border: '1.5px solid #c2410c',
                 }}
               />
-              Ho-Hum Beach (Bay-to-Ocean)
+              Private Beach (Ho-Hum)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span
@@ -1615,7 +1648,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
             borderRadius: 'var(--radius)',
             overflow: 'hidden',
             border: '1px solid var(--line)',
-            background: mapMode === 'satellite' ? '#142a3b' : '#dde1e5',
+            background: mapMode === 'satellite' ? '#142a3b' : '#fcfcfd',
             height: 610,
           }}
         >
@@ -1665,7 +1698,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 padding: '0 12px',
                 borderRadius: 999,
                 border: '1px solid var(--line)',
-                background: 'rgba(255,255,255,0.95)',
+                background: 'rgba(255,255,255,0.96)',
                 color: '#18232c',
                 fontSize: 12,
                 boxShadow: 'var(--shadow-1)',
@@ -1744,7 +1777,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 maxHeight: 'calc(100% - 68px)',
                 overflowY: 'auto',
                 borderRadius: 16,
-                background: 'rgba(255, 255, 255, 0.98)',
+                background: '#ffffff',
                 border: '1px solid var(--line)',
                 boxShadow: 'var(--shadow-2)',
                 padding: 16,
@@ -2042,7 +2075,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
             </div>
           )}
 
-          {/* Top-Right Zoom, Rotate, Village Reset & Ho-Hum Ferry Preset Controls */}
+          {/* Top-Right Zoom, Rotate, Village Reset & Private Beach Toggle Controls */}
           <div
             style={{
               position: 'absolute',
@@ -2051,7 +2084,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: 4,
-              background: 'rgba(255,255,255,0.95)',
+              background: '#ffffff',
               padding: 5,
               borderRadius: 16,
               border: '1px solid var(--line)',
@@ -2103,26 +2136,35 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
             <button
               type="button"
               className="icon-btn"
-              title="Reset Full Village View"
+              title="Reset Bellport Village View"
               style={{ borderColor: 'transparent', width: 30, height: 28 }}
-              onClick={() =>
-                setView({ zoom: 1.0, centerLon: -72.9416, centerLat: 40.7532, bearing: 0 })
-              }
+              onClick={resetVillageOnlyView}
             >
               <Compass size={14} />
             </button>
             <button
               type="button"
               className="icon-btn"
-              title="Zoom Out to Ho-Hum Beach & Ferry Route"
-              style={{ borderColor: 'transparent', width: 30, height: 28, color: 'var(--accent)' }}
-              onClick={showHoHumAndFerryView}
+              aria-pressed={isBeachFerryView}
+              title={
+                isBeachFerryView
+                  ? 'Return to Bellport Village view'
+                  : 'Zoom out to Private Beach and Ferry'
+              }
+              style={{
+                borderColor: 'transparent',
+                width: 30,
+                height: 28,
+                background: isBeachFerryView ? '#0f2537' : 'transparent',
+                color: isBeachFerryView ? '#ffffff' : 'var(--accent)',
+              }}
+              onClick={togglePrivateBeachAndFerry}
             >
               <Anchor size={14} />
             </button>
           </div>
 
-          {/* Bottom-Right Map | Satellite Segmented Toggle + Ho-Hum Ferry Pill */}
+          {/* Bottom-Right Toggleable Private Beach and Ferry Pill + Map | Satellite Segmented Toggle */}
           <div
             style={{
               position: 'absolute',
@@ -2136,24 +2178,34 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           >
             <button
               type="button"
-              onClick={showHoHumAndFerryView}
+              aria-pressed={isBeachFerryView}
+              onClick={togglePrivateBeachAndFerry}
+              title={
+                isBeachFerryView
+                  ? 'Click again to return to Bellport Village only'
+                  : 'Show Private Beach (Ho-Hum) and Ferry route'
+              }
               style={{
                 height: 32,
-                padding: '0 11px',
+                padding: '0 13px',
                 borderRadius: 999,
-                border: '1px solid var(--line)',
-                background: 'rgba(255,255,255,0.95)',
+                border: isBeachFerryView ? '1px solid #0f2537' : '1px solid var(--line)',
+                background: isBeachFerryView ? '#0f2537' : '#ffffff',
                 boxShadow: 'var(--shadow-1)',
                 fontSize: 11.5,
-                fontWeight: 500,
-                color: 'var(--ink)',
+                fontWeight: 600,
+                color: isBeachFerryView ? '#ffffff' : 'var(--ink)',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
+                gap: 6,
+                transition: 'background 160ms ease, color 160ms ease, border-color 160ms ease',
               }}
             >
-              <Anchor size={12} color="var(--accent)" />
-              <span>Ho-Hum & Ferry</span>
+              <Anchor size={12} color={isBeachFerryView ? '#e2c07d' : 'var(--accent)'} />
+              <span>Private Beach and Ferry</span>
+              {isBeachFerryView && (
+                <X size={12} style={{ marginLeft: 2, opacity: 0.85 }} />
+              )}
             </button>
 
             <div
@@ -2161,7 +2213,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                 display: 'inline-flex',
                 padding: 3,
                 borderRadius: 999,
-                background: 'rgba(255,255,255,0.96)',
+                background: '#ffffff',
                 border: '1px solid var(--line)',
                 boxShadow: 'var(--shadow-1)',
               }}
@@ -2177,7 +2229,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                       padding: '4px 11px',
                       borderRadius: 999,
                       border: 'none',
-                      background: active ? 'var(--accent)' : 'transparent',
+                      background: active ? '#0f2537' : 'transparent',
                       color: active ? '#ffffff' : 'var(--ink)',
                       fontSize: 11.5,
                       fontWeight: 600,

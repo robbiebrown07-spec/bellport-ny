@@ -195,16 +195,18 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
     <section className="results-band" aria-label="Saved homes and architectural taste">
       <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
         {/* Refinable Architectural Taste Profile Card */}
-        <ScrollReveal>
+        <ScrollReveal style={{ position: 'relative', zIndex: 30 }}>
           <div
             style={{
               padding: 26,
               borderRadius: 'var(--radius)',
-              background: 'var(--surface)',
+              background: '#ffffff',
               border: '1px solid var(--line)',
               display: 'flex',
               flexDirection: 'column',
               gap: 16,
+              position: 'relative',
+              zIndex: 30,
             }}
           >
             <div

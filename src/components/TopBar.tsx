@@ -37,7 +37,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
             className="topbar__brand"
             onClick={() => onSelectView('map')}
           >
-            <AppMark size={44} />
+            <AppMark size={38} />
             <div>
               <div className="topbar__title">Bellport Watch</div>
               <div className="topbar__subtitle">Robbie’s search for a family vacation house</div>

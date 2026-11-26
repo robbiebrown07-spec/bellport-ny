@@ -15,18 +15,18 @@ interface PriceDropsHistoryViewProps {
 }
 
 const LINE_PALETTE = [
-  '#d93025',
-  '#e37400',
-  '#1e8e3e',
-  '#9334e6',
-  '#00897b',
-  '#c2185b',
-  '#5c6bc0',
-  '#8d6e63',
-  '#0288d1',
-  '#7cb342',
-  '#f4511e',
-  '#546e7a',
+  '#2563eb',
+  '#4f46e5',
+  '#0284c7',
+  '#7c3aed',
+  '#0891b2',
+  '#475569',
+  '#6366f1',
+  '#0369a1',
+  '#6d28d9',
+  '#334155',
+  '#3b82f6',
+  '#64748b',
 ];
 
 function fmtNiceDate(iso: string): string {
@@ -436,7 +436,7 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                   );
                 })}
 
-                {/* Bold Cohort Average Change Line (#1a73e8) */}
+                {/* Bold Cohort Average Change Line — Red (Falling) or Green (Rising) with white halo */}
                 {averageCurvePts.length >= 2 && (
                   <g pointerEvents="none">
                     <path
@@ -448,19 +448,35 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                         })
                         .join(' ')}
                       fill="none"
-                      stroke="#1a73e8"
-                      strokeWidth={3.2}
+                      stroke="#ffffff"
+                      strokeWidth={5.4}
+                      strokeLinecap="round"
+                      opacity={0.92}
+                    />
+                    <path
+                      d={averageCurvePts
+                        .map((pt, idx) => {
+                          const x = xScale(pt.dateObj);
+                          const y = yScale(pt.val);
+                          return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+                        })
+                        .join(' ')}
+                      fill="none"
+                      stroke={summary.avgPct < 0 ? '#d93025' : '#188038'}
+                      strokeWidth={3.3}
                       strokeDasharray="7 4"
+                      strokeLinecap="round"
                     />
                     {(() => {
                       const end = averageCurvePts[averageCurvePts.length - 1];
+                      const avgCol = summary.avgPct < 0 ? '#d93025' : '#188038';
                       return (
                         <text
                           x={xScale(end.dateObj) + 6}
                           y={yScale(end.val) - 5}
-                          fontSize="11"
+                          fontSize="11.5"
                           fontWeight="700"
-                          fill="#1a73e8"
+                          fill={avgCol}
                         >
                           Avg ({summary.avgPct > 0 ? '+' : ''}
                           {summary.avgPct}%)

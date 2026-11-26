@@ -29,7 +29,21 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   searchInputRef,
 }) => {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [minPriceDraft, setMinPriceDraft] = useState<string>(() =>
+    filters.minPrice !== null ? String(filters.minPrice) : ''
+  );
+  const [maxPriceDraft, setMaxPriceDraft] = useState<string>(() =>
+    filters.maxPrice !== null ? String(filters.maxPrice) : ''
+  );
   const barRef = useRef<HTMLDivElement | null>(null);
+
+  const openOrToggleMenu = (menu: Exclude<OpenMenu, null>) => {
+    if (menu === 'price' && openMenu !== 'price') {
+      setMinPriceDraft(filters.minPrice !== null ? String(filters.minPrice) : '');
+      setMaxPriceDraft(filters.maxPrice !== null ? String(filters.maxPrice) : '');
+    }
+    setOpenMenu((m) => (m === menu ? null : menu));
+  };
 
   useEffect(() => {
     if (!openMenu) return;
@@ -166,13 +180,14 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    height: 34,
+    height: 36,
     padding: '0 10px',
     borderRadius: 10,
-    border: '1px solid var(--line)',
-    background: 'var(--bg)',
+    border: '1px solid var(--line-strong)',
+    background: '#ffffff',
+    color: '#202124',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12,
+    fontSize: 12.5,
   };
 
   const setPoolMode = (mode: 'none' | 'pool_only' | 'pool_or_room' | 'room_only') => {
@@ -585,7 +600,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
             <button
               type="button"
               style={triggerStyle(priceActive)}
-              onClick={() => setOpenMenu((m) => (m === 'price' ? null : 'price'))}
+              onClick={() => openOrToggleMenu('price')}
             >
               <span>{priceSummary}</span>
               <ChevronDown size={13} />
@@ -599,7 +614,11 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   {priceActive && (
                     <button
                       type="button"
-                      onClick={() => patch({ minPrice: null, maxPrice: null })}
+                      onClick={() => {
+                        setMinPriceDraft('');
+                        setMaxPriceDraft('');
+                        patch({ minPrice: null, maxPrice: null });
+                      }}
                       style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11 }}
                     >
                       Clear
@@ -608,30 +627,36 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>Low ($)</label>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
+                      Low ($)
+                    </label>
                     <input
+                      type="text"
+                      inputMode="text"
                       style={inputStyle}
-                      placeholder="No min (e.g. 800k)"
-                      defaultValue={filters.minPrice ?? ''}
-                      onBlur={(e) => patch({ minPrice: parseFlexibleNumber(e.target.value) })}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          patch({ minPrice: parseFlexibleNumber((e.target as HTMLInputElement).value) });
-                        }
+                      placeholder="e.g. 800k"
+                      value={minPriceDraft}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setMinPriceDraft(raw);
+                        patch({ minPrice: parseFlexibleNumber(raw) });
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--ink-2)' }}>High ($)</label>
+                    <label style={{ fontSize: 11, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>
+                      High ($)
+                    </label>
                     <input
+                      type="text"
+                      inputMode="text"
                       style={inputStyle}
-                      placeholder="No max (e.g. 2.5m)"
-                      defaultValue={filters.maxPrice ?? ''}
-                      onBlur={(e) => patch({ maxPrice: parseFlexibleNumber(e.target.value) })}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          patch({ maxPrice: parseFlexibleNumber((e.target as HTMLInputElement).value) });
-                        }
+                      placeholder="e.g. 2.5m"
+                      value={maxPriceDraft}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setMaxPriceDraft(raw);
+                        patch({ maxPrice: parseFlexibleNumber(raw) });
                       }}
                     />
                   </div>
@@ -646,14 +671,17 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     <button
                       key={lbl as string}
                       type="button"
-                      onClick={() =>
-                        patch({ minPrice: lo as number | null, maxPrice: hi as number | null })
-                      }
+                      onClick={() => {
+                        setMinPriceDraft(lo !== null ? fmtShortDollar(lo as number).replace('$', '') : '');
+                        setMaxPriceDraft(hi !== null ? fmtShortDollar(hi as number).replace('$', '') : '');
+                        patch({ minPrice: lo as number | null, maxPrice: hi as number | null });
+                      }}
                       style={{
                         padding: '4px 10px',
                         borderRadius: 999,
                         border: '1px solid var(--line)',
-                        background: 'var(--bg)',
+                        background: '#ffffff',
+                        color: '#202124',
                         fontSize: 11.5,
                       }}
                     >
