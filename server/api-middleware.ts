@@ -239,6 +239,85 @@ export async function handleApiRequest(
       return true;
     }
 
+    if (req.method === 'POST' && pathname === '/api/ask') {
+      const geminiKey = readGeminiApiKey();
+      if (!geminiKey) {
+        sendJson(res, 200, { ok: false, missingKey: true });
+        return true;
+      }
+      const body = await readJsonBody<{
+        question?: string;
+        history?: Array<{ role: 'user' | 'model'; text: string }>;
+        contextBriefing?: string;
+      }>(req);
+      const q = (body.question ?? '').trim();
+      if (!q) {
+        sendJson(res, 400, { ok: false, error: 'Missing question.' });
+        return true;
+      }
+      const history = Array.isArray(body.history) ? body.history : [];
+      const briefing = (body.contextBriefing ?? '').trim();
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const contents = [
+        ...history.map((turn, idx) => ({
+          role: turn.role,
+          parts: [
+            {
+              text:
+                idx === 0 && turn.role === 'user' && briefing
+                  ? `${briefing}\n\nUser Question: ${turn.text}`
+                  : turn.text,
+            },
+          ],
+        })),
+        {
+          role: 'user' as const,
+          parts: [{ text: history.length === 0 && briefing ? `${briefing}\n\nUser Question: ${q}` : q }],
+        },
+      ];
+      const sysPrompt = `You are Bellport Watch’s Senior Real Estate, Architecture & Local Advisor helping Robbie evaluate a family vacation home strictly inside Incorporated Bellport Village, NY (ZIP 11713, Town of Brookhaven, Suffolk County). Use Google Search and your deep domain expertise to answer ANY complex or open-ended question — even when it is NOT in the local parcel/sales database (taxes, ARB/historic district rules, pool/renovation costs, septic, flood insurance, commute, Ho-Hum ferry, clubs, comparisons) — while citing real Bellport Village homes/comps from the snapshot whenever helpful. Never mention "Flood Zone X".`;
+
+      const attempts: Array<{ model: string; useSearch: boolean }> = [
+        { model: 'gemini-2.5-flash', useSearch: true },
+        { model: 'gemini-2.5-flash', useSearch: false },
+      ];
+      for (const att of attempts) {
+        try {
+          const resp = await ai.models.generateContent({
+            model: att.model,
+            contents,
+            config: {
+              systemInstruction: sysPrompt,
+              ...(att.useSearch ? { tools: [{ googleSearch: {} }] } : {}),
+            },
+          });
+          const text = (resp.text ?? '').trim();
+          if (text) {
+            const chunks =
+              (
+                resp.candidates?.[0] as
+                  | {
+                      groundingMetadata?: {
+                        groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+                      };
+                    }
+                  | undefined
+              )?.groundingMetadata?.groundingChunks ?? [];
+            const webSources = chunks
+              .map((c) => ({ title: c.web?.title ?? 'Source', uri: c.web?.uri ?? '' }))
+              .filter((c) => Boolean(c.uri))
+              .slice(0, 5);
+            sendJson(res, 200, { ok: true, text, webSources, usedWebSearch: att.useSearch });
+            return true;
+          }
+        } catch {
+          // Try next attempt
+        }
+      }
+      sendJson(res, 200, { ok: false, error: 'Gemini temporarily unavailable.' });
+      return true;
+    }
+
     sendJson(res, 404, { error: `Unknown API route: ${pathname}` });
     return true;
   } catch (err) {

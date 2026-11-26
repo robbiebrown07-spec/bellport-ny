@@ -21,6 +21,7 @@ import { evaluateGoodDeal } from './lib/intelligence';
 import { evaluateRobbieFit } from './lib/robbieFit';
 import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
 import { parseNaturalLanguageQuery } from './lib/nlSearch';
+import { useGeminiApiKey } from './lib/geminiKey';
 import { VillageQaContext } from './lib/villageQa';
 import {
   INITIAL_UNIFIED_FILTERS,
@@ -333,6 +334,8 @@ export const App: React.FC = () => {
     return list;
   }, [allListings, catalog, parsedNl.sortHint, sortBy, tasteFilters, unifiedFilters]);
 
+  const [geminiApiKey, setGeminiApiKey] = useGeminiApiKey();
+
   const qaContextValue = useMemo(
     () => ({
       catalog,
@@ -341,10 +344,21 @@ export const App: React.FC = () => {
       tasteFilters,
       activeFilters: unifiedFilters,
       idealSearchNotes,
+      geminiApiKey,
+      onSaveGeminiKey: setGeminiApiKey,
       onOpenHome: (pid: string) => setSelectedParcelOrListingId(pid),
       onOpenSavedTab: () => setActiveView('favorites'),
     }),
-    [allListings, catalog, idealSearchNotes, salesHistory, tasteFilters, unifiedFilters]
+    [
+      allListings,
+      catalog,
+      geminiApiKey,
+      idealSearchNotes,
+      salesHistory,
+      setGeminiApiKey,
+      tasteFilters,
+      unifiedFilters,
+    ]
   );
 
   const visibleHomes = useMemo(

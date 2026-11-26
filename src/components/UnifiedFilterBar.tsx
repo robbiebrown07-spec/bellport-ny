@@ -142,11 +142,25 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   const patch = (p: Partial<UnifiedFilters>) => onChange({ ...filters, ...p });
 
   const qaCtx = useVillageQa();
+  const [forcedQuery, setForcedQuery] = useState<string>('');
+  const [immediateTrigger, setImmediateTrigger] = useState<number>(0);
+
+  const isForcedOpen = Boolean(filters.nlQuery.trim()) && forcedQuery === filters.nlQuery.trim();
   const parsedNl = useMemo(() => parseNaturalLanguageQuery(filters.nlQuery), [filters.nlQuery]);
   const qaAnswer = useMemo(
-    () => (qaCtx && filters.nlQuery.trim() ? answerVillageQuestion(filters.nlQuery, qaCtx, filters) : null),
-    [filters, qaCtx]
+    () =>
+      qaCtx && filters.nlQuery.trim()
+        ? answerVillageQuestion(filters.nlQuery, qaCtx, filters, isForcedOpen)
+        : null,
+    [filters, isForcedOpen, qaCtx]
   );
+
+  const triggerAskGeminiNow = () => {
+    const q = filters.nlQuery.trim();
+    if (!q) return;
+    setForcedQuery(q);
+    setImmediateTrigger((n) => n + 1);
+  };
 
   // Summaries
   const statusParts: string[] = [];
@@ -310,7 +324,13 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           type="search"
           value={filters.nlQuery}
           onChange={(e) => patch({ nlQuery: e.target.value, q: '' })}
-          placeholder="Search with Gemini"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && filters.nlQuery.trim()) {
+              e.preventDefault();
+              triggerAskGeminiNow();
+            }
+          }}
+          placeholder="Search homes or ask Gemini any complex question…"
           style={{
             flex: '1 1 200px',
             minWidth: 0,
@@ -323,6 +343,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           }}
         />
         {parsedNl.active &&
+          !parsedNl.isAdvisoryOnly &&
           parsedNl.chips.map((c) => (
             <span
               key={c}
@@ -338,10 +359,36 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
               {c}
             </span>
           ))}
+        {filters.nlQuery.trim() && !qaAnswer && (
+          <button
+            type="button"
+            onClick={triggerAskGeminiNow}
+            style={{
+              border: '1px solid rgba(26,115,232,0.35)',
+              background: '#e8f0fe',
+              color: '#174ea6',
+              borderRadius: 999,
+              height: 26,
+              padding: '0 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 11.5,
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            <Sparkles size={12} />
+            <span>Ask Gemini</span>
+          </button>
+        )}
         {filters.nlQuery && (
           <button
             type="button"
-            onClick={() => patch({ nlQuery: '' })}
+            onClick={() => {
+              setForcedQuery('');
+              patch({ nlQuery: '' });
+            }}
             aria-label="Clear search"
             style={{
               border: 'none',
@@ -363,9 +410,13 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
       {qaCtx && qaAnswer && (
         <VillageQaCard
           query={filters.nlQuery}
+          immediateTrigger={immediateTrigger}
           answer={qaAnswer}
           qaCtx={qaCtx}
-          onClear={() => patch({ nlQuery: '' })}
+          onClear={() => {
+            setForcedQuery('');
+            patch({ nlQuery: '' });
+          }}
         />
       )}
 

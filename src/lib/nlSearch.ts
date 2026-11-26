@@ -2,6 +2,7 @@ export interface ParsedNaturalQuery {
   raw: string;
   active: boolean;
   isQuestion: boolean;
+  isAdvisoryOnly: boolean;
   useSavedParameters: boolean;
   chips: string[];
   statusIntent: 'for_sale' | 'past_sales' | 'all_homes' | null;
@@ -97,18 +98,32 @@ const STOP_WORDS = new Set([
   'tell', 'compare', 'explain', 'price', 'prices', 'cost', 'costs', 'come', 'comes', 'market',
 ]);
 
+export const OPEN_WORLD_TOPIC_RX =
+  /\b(?:tax|taxes|arb|architectural\s+review|zoning|permits?|permitting|setbacks?|historic\s+district|septic|cesspool|owts|insurance|fema|commute|lirr|train|jitney|drive\s+time|nyc|manhattan|brooklyn|ferry|ho[-\s]?hum|mothers?\s+beach|country\s+club|golf|school|schools|district|renovat(?:e|ion|ing)|remodel(?:ing)?|restor(?:e|ation)|fixer|turnkey|cost\s+to|build\s+a|put\s+in\s+a|install\s+a|add\s+a\s+pool|gunite|all[-\s]?in|budget|mortgage|carrying\s+costs?|closing\s+costs?|mansion\s+tax|appreciation|invest(?:ment|ing)?|resale|rent\s+out|short[-\s]?term\s+rental|airbnb\s+rules|laws|rules|regulations|restrictions|ordinance|vs\.?|versus|compared\s+to|hamptons|quogue|westhampton|amagansett|remsenburg|fire\s+island|north\s+fork|pros\s+and\s+cons|tradeoffs?|worth\s+it|kids|children|biking|quietest|winter|year[-\s]?round|off[-\s]?season|contractors?|architects?)\b/i;
+
 export function detectQuestionQuery(rawInput: string): boolean {
   const raw = rawInput.trim();
   if (!raw) return false;
   if (raw.includes('?')) return true;
-  return (
-    /^\s*(?:how|what|what's|whats|which|where|when|why|who|do|does|did|is|are|can|could|would|tell\s+me|compare|explain)\b/i.test(
+  if (
+    /^\s*(?:how|what|what's|whats|which|where|when|why|who|do|does|did|is|are|can|could|would|should|will|tell\s+me|compare|explain|estimate|calculate|analyze|advise|recommend|suggest|help\s+me|if\s+we|if\s+i|suppose|assuming)\b/i.test(
       raw
-    ) ||
+    )
+  ) {
+    return true;
+  }
+  if (
     /\b(?:how\s+many|how\s+much|how\s+often|per\s+year|each\s+year|annually|average\s+price|median\s+price|turnover|meet\s+(?:our|my)|match\s+(?:our|my))\b/i.test(
       raw
     )
-  );
+  ) {
+    return true;
+  }
+  if (OPEN_WORLD_TOPIC_RX.test(raw)) return true;
+
+  // Multi-word conversational sentences (8+ words) should also open Gemini rather than failing strict token match
+  const wordCount = raw.split(/\s+/).length;
+  return wordCount >= 8;
 }
 
 export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery {
@@ -119,11 +134,18 @@ export function parseNaturalLanguageQuery(rawInput: string): ParsedNaturalQuery 
     /\b(?:meet|meets|meeting|match|matches|matching|fit|fits|fitting)\s+(?:our|my|the)\s+(?:search|parameters?|criteria|filters?|targets?|profile|taste|needs|requirements|specs)\b|\b(?:our|my)\s+(?:search\s+parameters?|search\s+criteria|criteria|parameters?|filters?|taste\s+profile|ideal\s+search|targets?)\b/i.test(
       s
     );
+  const asksForHomeSubset =
+    useSavedParameters ||
+    /\b(?:which\s+(?:homes?|houses?|listings?|properties|streets?)|what\s+(?:homes?|houses?|listings?)|how\s+many\s+(?:homes?|houses?)|show\s+me|find\s+(?:me\s+)?(?:homes?|houses?)|homes?\s+(?:that|with|under|below|where)|houses?\s+(?:that|with|under|below|where))\b/i.test(
+      s
+    );
+  const isAdvisoryOnly = isQuestion && !asksForHomeSubset && OPEN_WORLD_TOPIC_RX.test(s);
 
   const res: ParsedNaturalQuery = {
     raw,
     active: raw.length > 0,
     isQuestion,
+    isAdvisoryOnly,
     useSavedParameters,
     chips: [],
     statusIntent: null,

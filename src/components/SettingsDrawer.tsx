@@ -1,6 +1,21 @@
 import React, { useState } from 'react';
-import { Download, RefreshCw, RotateCcw, Trash2, Upload, X } from 'lucide-react';
+import {
+  Download,
+  ExternalLink,
+  KeyRound,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import type { PersistedAppState, SyncMetadata } from '../types';
+import {
+  clearStoredGeminiApiKey,
+  maskGeminiKey,
+  useGeminiApiKey,
+} from '../lib/geminiKey';
 import {
   exportListingsAsCsv,
   exportStateAsJson,
@@ -37,8 +52,19 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+  const [geminiKey, setGeminiKey] = useGeminiApiKey();
+  const [geminiDraft, setGeminiDraft] = useState('');
+  const [geminiSavedNote, setGeminiSavedNote] = useState<string | null>(null);
 
   if (!open) return null;
+
+  const handleSaveGemini = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!geminiDraft.trim()) return;
+    setGeminiKey(geminiDraft.trim());
+    setGeminiDraft('');
+    setGeminiSavedNote('Gemini API key saved on this device — Search with Gemini is live.');
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -89,7 +115,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       <div className="drawer" style={{ width: 'min(460px, 100vw)' }}>
         <div className="drawer__header">
           <h2 id="settings-drawer-title" style={{ fontSize: 20 }}>
-            Settings &amp; Daily Sync
+            Settings, Gemini AI &amp; Sync
           </h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close settings">
             <X size={16} />
@@ -97,6 +123,100 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         </div>
 
         <div className="drawer__body">
+          {/* Gemini AI Search & Open-Ended Reasoning */}
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              background: 'var(--surface-subtle)',
+              border: '1px solid var(--line)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3 style={{ fontSize: 15, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={15} color="var(--accent)" />
+                <span>Gemini AI Search &amp; Reasoning</span>
+              </h3>
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: geminiKey ? '#188038' : 'var(--ink-2)',
+                }}
+              >
+                {geminiKey ? `Connected (${maskGeminiKey(geminiKey)})` : 'Not connected'}
+              </span>
+            </div>
+            <p style={{ fontSize: 12.8, color: 'var(--ink-2)', margin: 0, lineHeight: 1.45 }}>
+              Powers open-ended complex questions in <strong>Search with Gemini</strong> using{' '}
+              <strong>Gemini 2.5 Flash + Google Search</strong> (taxes, ARB historic rules, pool &amp;
+              renovation costs, commute, comparisons). Stored privately on this device only.
+            </p>
+            <form onSubmit={handleSaveGemini} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                type="password"
+                value={geminiDraft}
+                onChange={(e) => setGeminiDraft(e.target.value)}
+                placeholder={geminiKey ? 'Paste new key to replace…' : 'Paste Gemini key (AIzaSy…)'}
+                autoComplete="off"
+                style={{
+                  flex: '1 1 180px',
+                  height: 36,
+                  padding: '0 10px',
+                  borderRadius: 10,
+                  border: '1px solid var(--line-strong)',
+                  background: '#ffffff',
+                  color: '#202124',
+                  fontSize: 16,
+                  fontFamily: 'var(--font-mono)',
+                }}
+              />
+              <button
+                type="submit"
+                className="icon-btn icon-btn--primary"
+                disabled={!geminiDraft.trim()}
+                style={{ height: 36, fontWeight: 600 }}
+              >
+                <KeyRound size={14} />
+                <span>{geminiKey ? 'Update' : 'Save Key'}</span>
+              </button>
+              {geminiKey && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => {
+                    clearStoredGeminiApiKey();
+                    setGeminiSavedNote('Disconnected Gemini API key from this device.');
+                  }}
+                  style={{ height: 36 }}
+                >
+                  <span>Clear</span>
+                </button>
+              )}
+            </form>
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 12,
+                color: 'var(--accent)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <span>Get a free Gemini API key at Google AI Studio</span>
+              <ExternalLink size={12} />
+            </a>
+            {geminiSavedNote && (
+              <p style={{ fontSize: 12.5, color: '#188038', margin: 0 }}>{geminiSavedNote}</p>
+            )}
+          </div>
+
           <div
             style={{
               padding: 14,

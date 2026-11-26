@@ -689,7 +689,7 @@ export function homeMatchesUnifiedFilters(
   }
 
   // Natural Language Search evaluation (structured + visual/photo + GIS spatial + synonym-expanded)
-  if (nl?.active) {
+  if (nl?.active && !nl.isAdvisoryOnly) {
     if (nl.minPrice !== null && cmpPrice < nl.minPrice) return false;
     if (nl.maxPrice !== null && cmpPrice > nl.maxPrice) return false;
     if (nl.minBeds !== null && h.beds < nl.minBeds) return false;
