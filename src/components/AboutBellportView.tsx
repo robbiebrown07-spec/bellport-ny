@@ -28,6 +28,7 @@ interface AboutBellportViewProps {
   pois: VillagePoi[];
   catalog: UnifiedHome[];
   onOpenListing: (parcelId: string) => void;
+  onShowOnMap?: (parcelId: string) => void;
   onJumpToMap?: () => void;
 }
 
@@ -111,6 +112,7 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
   pois,
   catalog,
   onOpenListing,
+  onShowOnMap,
   onJumpToMap,
 }) => {
   const [poiFilter, setPoiFilter] = useState<PoiFilter>('all');
@@ -457,13 +459,37 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          color: 'var(--accent)',
-                          fontSize: 12.5,
-                          fontWeight: 600,
+                          gap: 8,
                         }}
                       >
-                        <span>More info &amp; photos</span>
-                        <ArrowRight size={14} />
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            color: 'var(--accent)',
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                          }}
+                        >
+                          <span>More info</span>
+                          <ArrowRight size={14} />
+                        </span>
+
+                        {onShowOnMap && (
+                          <button
+                            type="button"
+                            className="show-on-map-btn"
+                            style={{ minHeight: 30, padding: '3px 10px', fontSize: 11.5 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onShowOnMap(h.parcelId);
+                            }}
+                          >
+                            <MapPin size={12} />
+                            <span>Show on Map</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </article>

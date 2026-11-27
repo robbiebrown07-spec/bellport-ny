@@ -67,6 +67,7 @@ interface VillageParcelMapViewProps {
   unifiedFilters: UnifiedFilters;
   onChangeUnifiedFilters: (next: UnifiedFilters) => void;
   privacyBlur: boolean;
+  focusRequest?: { parcelId: string; seq: number } | null;
   onOpenHomeDrawer: (parcelId: string) => void;
   onSyncMetaUpdate: (meta: SyncMetadata) => void;
 }
@@ -106,6 +107,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
   unifiedFilters,
   onChangeUnifiedFilters,
   privacyBlur,
+  focusRequest,
   onOpenHomeDrawer,
   onSyncMetaUpdate,
 }) => {
@@ -917,7 +919,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       }
 
       ctx.save();
-      if (dimmed) ctx.globalAlpha = isSat ? 0.35 : 0.28;
+      if (dimmed && p.id !== selectedParcel?.id) ctx.globalAlpha = isSat ? 0.35 : 0.28;
       for (const ring of p.rings) {
         traceRing(ring);
         ctx.fillStyle = fill;
@@ -1131,11 +1133,14 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
       ctx.lineJoin = 'round';
       for (const ring of selectedParcel.rings) {
         traceRing(ring);
-        ctx.strokeStyle = 'rgba(234, 67, 53, 0.34)';
-        ctx.lineWidth = 9.0;
+        ctx.strokeStyle = 'rgba(234, 67, 53, 0.36)';
+        ctx.lineWidth = 10.0;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.lineWidth = 5.4;
         ctx.stroke();
         ctx.strokeStyle = '#ea4335';
-        ctx.lineWidth = 3.4;
+        ctx.lineWidth = 3.6;
         ctx.stroke();
       }
       ctx.restore();
@@ -1522,21 +1527,55 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     }
   };
 
-  const focusParcelById = (parcelId: string, zoomIn = true) => {
+  const handledFocusSeqRef = useRef<number>(0);
+
+  const scrollMapIntoView = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof window === 'undefined') return;
+    const rect = canvas.getBoundingClientRect();
+    const targetTop = Math.max(0, rect.top + window.scrollY - (isMobileMap ? 126 : 102));
+    window.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }, [isMobileMap]);
+
+  const focusParcelById = (parcelId: string, zoomIn = true, scrollToMap = false) => {
     if (!bundle) return;
     const found = bundle.parcels.find((p) => p.id === parcelId);
     if (!found) return;
     setSelectedPoi(null);
+    setStreetSummary(null);
     setSelectedParcelId(found.id);
     if (zoomIn) {
       setView((prev) => ({
         ...prev,
-        zoom: Math.max(prev.zoom, 2.3),
+        zoom: Math.max(prev.zoom, 2.5),
         centerLon: found.lon,
         centerLat: found.lat,
       }));
     }
+    if (scrollToMap) {
+      scrollMapIntoView();
+    }
   };
+
+  useEffect(() => {
+    if (!bundle || !focusRequest || focusRequest.seq === handledFocusSeqRef.current) return;
+    const found = bundle.parcels.find((p) => p.id === focusRequest.parcelId);
+    if (!found) return;
+    const raf = window.requestAnimationFrame(() => {
+      handledFocusSeqRef.current = focusRequest.seq;
+      setSelectedPoi(null);
+      setStreetSummary(null);
+      setSelectedParcelId(found.id);
+      setView((prev) => ({
+        ...prev,
+        zoom: Math.max(prev.zoom, 2.5),
+        centerLon: found.lon,
+        centerLat: found.lat,
+      }));
+      scrollMapIntoView();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [bundle, focusRequest, scrollMapIntoView]);
 
   const isBeachFerryView = view.zoom <= 0.68 && view.centerLat < 40.743;
 
@@ -2706,6 +2745,19 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                             <span>Beauty</span>
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          className={`show-on-map-btn show-on-map-btn--full ${
+                            selectedParcelId === h.parcelId ? 'is-active' : ''
+                          }`}
+                          onClick={() => focusParcelById(h.parcelId, true, true)}
+                        >
+                          <MapPin size={13} />
+                          <span>
+                            {selectedParcelId === h.parcelId ? 'Shown on Map ✓' : 'Show on Map'}
+                          </span>
+                        </button>
                       </div>
                     </article>
                   </ScrollReveal>
@@ -2734,7 +2786,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
         <ScrollReveal direction="up" delayMs={60}>
           <SalesOverTimeModule
             privacyBlur={privacyBlur}
-            onSelectParcel={(pid) => focusParcelById(pid)}
+            onSelectParcel={(pid) => focusParcelById(pid, true, true)}
             onOpenHome={(pid) => onOpenHomeDrawer(pid)}
           />
         </ScrollReveal>

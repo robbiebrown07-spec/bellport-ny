@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Heart, LayoutGrid, List, RotateCcw, ThumbsDown } from 'lucide-react';
+import { Heart, LayoutGrid, List, MapPin, RotateCcw, ThumbsDown } from 'lucide-react';
 import { median } from 'd3-array';
 import type {
   EmailAlertRule,
@@ -315,6 +315,27 @@ export const App: React.FC = () => {
           )
         : [],
     [parcelsBundle, allListings, salesHistory, savedParcelIds, hiddenParcelIds, parcelNotes, parcelStatuses]
+  );
+
+  const [mapFocusRequest, setMapFocusRequest] = useState<{
+    parcelId: string;
+    seq: number;
+  } | null>(null);
+
+  const showHomeOnMap = useCallback(
+    (id: string) => {
+      const matched = catalog.find(
+        (h) => h.parcelId === id || h.listingId === id || h.uid === id
+      );
+      const resolvedPid = matched?.parcelId ?? id;
+      openPropertyDrawer(null);
+      setActiveView('map');
+      setMapFocusRequest((prev) => ({
+        parcelId: resolvedPid,
+        seq: (prev?.seq ?? 0) + 1,
+      }));
+    },
+    [catalog, openPropertyDrawer]
   );
 
   const parsedNl = useMemo(
@@ -663,6 +684,7 @@ export const App: React.FC = () => {
               setHomesLimit(24);
             }}
             privacyBlur={appState.preferences.privacyBlur}
+            focusRequest={mapFocusRequest}
             onOpenHomeDrawer={(parcelId) => openPropertyDrawer(parcelId)}
             onSyncMetaUpdate={(meta) => setSyncMeta(meta)}
           />
@@ -689,6 +711,7 @@ export const App: React.FC = () => {
               setActiveView('map');
             }}
             onOpenListing={(id) => openPropertyDrawer(id)}
+            onShowOnMap={showHomeOnMap}
             onToggleFavorite={(id) => {
               const found = catalog.find(
                 (h) => h.parcelId === id || h.listingId === id || h.uid === id
@@ -715,6 +738,7 @@ export const App: React.FC = () => {
             onToggleRule={toggleEmailAlert}
             onDeleteRule={deleteEmailAlert}
             onOpenListing={(id) => openPropertyDrawer(id)}
+            onShowOnMap={showHomeOnMap}
           />
         )}
 
@@ -723,6 +747,7 @@ export const App: React.FC = () => {
             listings={allListings}
             privacyBlur={appState.preferences.privacyBlur}
             onOpenListing={(id) => openPropertyDrawer(id)}
+            onShowOnMap={showHomeOnMap}
           />
         )}
 
@@ -731,6 +756,7 @@ export const App: React.FC = () => {
             pois={parcelsBundle?.pois ?? []}
             catalog={catalog}
             onOpenListing={(id) => openPropertyDrawer(id)}
+            onShowOnMap={showHomeOnMap}
             onJumpToMap={() => setActiveView('map')}
           />
         )}
@@ -1101,6 +1127,15 @@ export const App: React.FC = () => {
                                   <span>Beauty</span>
                                 </div>
                               </div>
+
+                              <button
+                                type="button"
+                                className="show-on-map-btn show-on-map-btn--full"
+                                onClick={() => showHomeOnMap(h.parcelId)}
+                              >
+                                <MapPin size={13} />
+                                <span>Show on Map</span>
+                              </button>
                             </div>
                           </article>
                         </ScrollReveal>
@@ -1112,7 +1147,7 @@ export const App: React.FC = () => {
                     <table className="listings-table">
                       <thead>
                         <tr>
-                          <th>♥ / 👎</th>
+                          <th>♥ / 👎 / 📍</th>
                           <th>Address &amp; Architectural Style</th>
                           <th>Fit</th>
                           <th>Area</th>
@@ -1160,6 +1195,16 @@ export const App: React.FC = () => {
                                     onClick={() => toggleHomeHidden(h.parcelId, h.listingId)}
                                   >
                                     <ThumbsDown size={13} color="var(--ink-2)" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="show-on-map-btn"
+                                    title="Show on Map"
+                                    aria-label={`Show ${h.address} on map`}
+                                    style={{ minHeight: 32, padding: '0 9px', fontSize: 11.5 }}
+                                    onClick={() => showHomeOnMap(h.parcelId)}
+                                  >
+                                    <MapPin size={13} />
                                   </button>
                                 </div>
                               </td>
@@ -1257,6 +1302,13 @@ export const App: React.FC = () => {
           }
         }}
         onClose={() => openPropertyDrawer(null)}
+        onShowOnMap={
+          drawerHome
+            ? () => showHomeOnMap(drawerHome.parcelId)
+            : drawerListing
+              ? () => showHomeOnMap(drawerListing.id)
+              : undefined
+        }
         onUpdateListing={updateListing}
         onToggleHidden={
           drawerHome

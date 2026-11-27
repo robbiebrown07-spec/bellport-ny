@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { scaleLinear, scaleTime } from 'd3-scale';
-import { ArrowRight, TrendingDown, X } from 'lucide-react';
+import { ArrowRight, MapPin, TrendingDown, X } from 'lucide-react';
 import type { Listing } from '../types';
 import { evaluateGoodDeal, getPriceChangeStats } from '../lib/intelligence';
 import { fmtShortDollar, resolveAssetUrl } from '../lib/unifiedCatalog';
@@ -12,6 +12,7 @@ interface PriceDropsHistoryViewProps {
   listings: Listing[];
   privacyBlur: boolean;
   onOpenListing: (id: string) => void;
+  onShowOnMap: (id: string) => void;
 }
 
 const LINE_PALETTE = [
@@ -39,6 +40,7 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
   listings,
   privacyBlur,
   onOpenListing,
+  onShowOnMap,
 }) => {
   const [chartMode, setChartMode] = useState<'pct' | 'dollar'>('pct');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -224,7 +226,11 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
   return (
     <section className="results-band" aria-label="House prices over time">
       <div className="container" style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-        <SalesOverTimeModule privacyBlur={privacyBlur} onOpenHome={onOpenListing} />
+        <SalesOverTimeModule
+          privacyBlur={privacyBlur}
+          onSelectParcel={onShowOnMap}
+          onOpenHome={onOpenListing}
+        />
 
         {/* Unified Multi-Listing Active Price Trajectory Graph */}
         <ScrollReveal>
@@ -570,7 +576,16 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="show-on-map-btn"
+                    style={{ minHeight: 32, padding: '0 11px', fontSize: 12 }}
+                    onClick={() => onShowOnMap(activeSeries.listing.id)}
+                  >
+                    <MapPin size={13} />
+                    <span>Show on Map</span>
+                  </button>
                   <button
                     type="button"
                     className="icon-btn icon-btn--primary"
@@ -613,6 +628,7 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                     <th>Current Ask</th>
                     <th>Change</th>
                     <th>Valuation</th>
+                    <th>Map</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -658,6 +674,17 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <ValuationBadge listing={listing} deal={deal} compact />
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="show-on-map-btn"
+                          style={{ minHeight: 30, padding: '3px 10px', fontSize: 11.5 }}
+                          onClick={() => onShowOnMap(listing.id)}
+                        >
+                          <MapPin size={12} />
+                          <span>Show on Map</span>
+                        </button>
                       </td>
                     </tr>
                   ))}

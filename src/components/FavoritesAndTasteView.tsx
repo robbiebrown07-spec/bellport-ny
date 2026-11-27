@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Compass, Heart, RotateCcw, ThumbsDown } from 'lucide-react';
+import { Compass, Heart, MapPin, RotateCcw, ThumbsDown } from 'lucide-react';
 import type { Listing } from '../types';
 import { evaluateGoodDeal } from '../lib/intelligence';
 import { evaluateRobbieFit } from '../lib/robbieFit';
@@ -32,6 +32,7 @@ interface FavoritesAndTasteViewProps {
   onChangeIdealSearchNotes: (next: string) => void;
   onApplyToMap: (next: UnifiedFilters) => void;
   onOpenListing: (id: string) => void;
+  onShowOnMap: (id: string) => void;
   onToggleFavorite: (id: string) => void;
   onToggleHidden: (id: string) => void;
 }
@@ -52,6 +53,7 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
   onChangeIdealSearchNotes,
   onApplyToMap,
   onOpenListing,
+  onShowOnMap,
   onToggleFavorite,
   onToggleHidden,
 }) => {
@@ -506,6 +508,15 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                             <span>Beauty</span>
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          className="show-on-map-btn show-on-map-btn--full"
+                          onClick={() => onShowOnMap(h.parcelId)}
+                        >
+                          <MapPin size={13} />
+                          <span>Show on Map</span>
+                        </button>
                       </div>
                     </article>
                   );
@@ -677,6 +688,15 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                             <span>Beauty</span>
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          className="show-on-map-btn show-on-map-btn--full"
+                          onClick={() => onShowOnMap(h.parcelId)}
+                        >
+                          <MapPin size={13} />
+                          <span>Show on Map</span>
+                        </button>
                       </div>
                     </article>
                   );

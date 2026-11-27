@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Heart,
   Home,
+  MapPin,
   Plus,
   Sparkles,
   ThumbsDown,
@@ -47,6 +48,7 @@ interface PropertyDrawerProps {
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
+  onShowOnMap?: () => void;
   onUpdateListing: (id: string, patch: Partial<Listing>) => void;
   onToggleHidden?: () => void;
   onDeleteListing: (id: string) => void;
@@ -65,6 +67,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   onPrev,
   onNext,
   onClose,
+  onShowOnMap,
   onUpdateListing,
   onToggleHidden,
   onDeleteListing,
@@ -280,6 +283,17 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               <span className="badge" style={{ textTransform: 'capitalize' }}>
                 {listing.marketStatus}
               </span>
+              {onShowOnMap && (
+                <button
+                  type="button"
+                  className="show-on-map-btn"
+                  style={{ minHeight: 30, padding: '3px 11px', fontSize: 12 }}
+                  onClick={onShowOnMap}
+                >
+                  <MapPin size={13} />
+                  <span>Show on Map</span>
+                </button>
+              )}
             </div>
 
             <h2 id="drawer-listing-title" style={{ fontSize: 26, marginBottom: 4 }}>

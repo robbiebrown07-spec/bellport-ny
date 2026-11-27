@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BellRing, Check, Eye, Mail, Plus, Send, Sparkles, Trash2 } from 'lucide-react';
+import { BellRing, Check, Eye, Mail, MapPin, Plus, Send, Sparkles, Trash2 } from 'lucide-react';
 import type {
   AlertPoolMode,
   EmailAlertFrequency,
@@ -27,6 +27,7 @@ interface EmailAlertsViewProps {
   onToggleRule: (id: string) => void;
   onDeleteRule: (id: string) => void;
   onOpenListing: (parcelId: string) => void;
+  onShowOnMap: (parcelId: string) => void;
 }
 
 const FREQUENCY_LABELS: Record<EmailAlertFrequency, { label: string; desc: string }> = {
@@ -75,6 +76,7 @@ export const EmailAlertsView: React.FC<EmailAlertsViewProps> = ({
   onToggleRule,
   onDeleteRule,
   onOpenListing,
+  onShowOnMap,
 }) => {
   const [name, setName] = useState('Bellport Family Vacation House Alert');
   const [email, setEmail] = useState('robbiebrown07@gmail.com');
@@ -735,7 +737,7 @@ export const EmailAlertsView: React.FC<EmailAlertsViewProps> = ({
                               </div>
                             </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                             {priceStats &&
                               priceStats.totalDropDollar > 0 &&
                               rule.notifyOnPriceDrop && (
@@ -749,6 +751,18 @@ export const EmailAlertsView: React.FC<EmailAlertsViewProps> = ({
                             >
                               ${m.price.toLocaleString()}
                             </strong>
+                            <button
+                              type="button"
+                              className="show-on-map-btn"
+                              style={{ minHeight: 30, padding: '3px 10px', fontSize: 11.5 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onShowOnMap(m.parcelId);
+                              }}
+                            >
+                              <MapPin size={12} />
+                              <span>Show on Map</span>
+                            </button>
                           </div>
                         </div>
                       );

@@ -989,6 +989,52 @@ mark.kw-hit {
   }
 }
 
+.show-on-map-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(217, 48, 37, 0.34);
+  background: #fff8f7;
+  color: #c5221f;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-emphasized),
+    border-color var(--dur-fast) var(--ease-emphasized);
+
+  @media (max-width: 640px) {
+    min-height: 40px;
+    padding: 6px 13px;
+  }
+
+  &:hover {
+    background: #fce8e6;
+    border-color: #d93025;
+  }
+
+  &.is-active {
+    background: #fce8e6;
+    border-color: #ea4335;
+    color: #a50e0e;
+  }
+
+  &--full {
+    width: 100%;
+    margin-top: 2px;
+  }
+}
+
+[data-theme='dark'] .show-on-map-btn {
+  background: rgba(234, 67, 53, 0.14);
+  border-color: rgba(234, 67, 53, 0.42);
+  color: #f28b82;
+}
+
 .status-dot {
   width: 9px;
   height: 9px;
