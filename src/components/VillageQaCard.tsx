@@ -113,6 +113,7 @@ interface QueryRunState {
   keySig: string;
   query: string;
   loading: boolean;
+  streamingText?: string;
   result: LiveGeminiResult | null;
 }
 
@@ -146,30 +147,57 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
   useEffect(() => {
     if (!trimmedQuery) return;
     let active = true;
-    const delayMs = immediateTrigger > 0 ? 20 : 620;
+    const controller = new AbortController();
+    const delayMs = immediateTrigger > 0 ? 0 : 280;
 
     const timer = window.setTimeout(() => {
-      setRunState({ keySig, query: trimmedQuery, loading: true, result: null });
+      setRunState({ keySig, query: trimmedQuery, loading: true, streamingText: '', result: null });
       void askBellportGemini({
         question: trimmedQuery,
         contextBriefing: answer.groundingDigest,
         catalog: qaCtx.catalog,
         geminiApiKey: activeKey,
+        signal: controller.signal,
+        onStreamText: (partialText) => {
+          if (!active || controller.signal.aborted) return;
+          setRunState({
+            keySig,
+            query: trimmedQuery,
+            loading: true,
+            streamingText: partialText,
+            result: null,
+          });
+        },
       }).then((res) => {
-        if (!active) return;
-        setRunState({ keySig, query: trimmedQuery, loading: false, result: res });
+        if (!active || controller.signal.aborted) return;
+        setRunState({
+          keySig,
+          query: trimmedQuery,
+          loading: false,
+          streamingText: res.text ?? '',
+          result: res,
+        });
       });
     }, delayMs);
 
     return () => {
       active = false;
+      controller.abort();
       window.clearTimeout(timer);
     };
   }, [activeKey, answer.groundingDigest, immediateTrigger, keySig, qaCtx.catalog, trimmedQuery]);
 
   const isCurrentRun = runState?.query === trimmedQuery && runState?.keySig === keySig;
   const isLoadingPrimary = !isCurrentRun || runState.loading;
+  const streamingPrimaryText = isCurrentRun ? (runState.streamingText ?? '') : '';
   const primaryResult = isCurrentRun ? runState.result : null;
+  const livePrimaryText =
+    primaryResult?.status === 'ok' && primaryResult.text
+      ? primaryResult.text
+      : isLoadingPrimary && streamingPrimaryText
+        ? streamingPrimaryText
+        : '';
+  const hasGeminiContent = Boolean(livePrimaryText) || primaryResult?.status === 'ok';
 
   const handleSaveKeySubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,6 +241,13 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
       contextBriefing: answer.groundingDigest,
       catalog: qaCtx.catalog,
       geminiApiKey: activeKey,
+      onStreamText: (partialText) => {
+        setThreadState({
+          rootQuery: trimmedQuery,
+          turns: [...optimisticTurns, { role: 'model', text: partialText }],
+          loadingFollowUp: true,
+        });
+      },
     });
 
     const replyTurn: QaChatTurn = {
@@ -258,9 +293,11 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
       ? primaryResult.usedWebSearch
         ? 'Gemini 3.8 Flash · Live Web + Bellport Context'
         : 'Gemini 3.8 Flash · Bellport Advisor'
-      : isLoadingPrimary && activeKey
-        ? 'Asking Gemini 3.8 Flash…'
-        : 'Bellport Village Intelligence';
+      : isLoadingPrimary && livePrimaryText
+        ? 'Streaming Gemini 3.8 Flash…'
+        : isLoadingPrimary && activeKey
+          ? 'Asking Gemini 3.8 Flash…'
+          : 'Bellport Village Intelligence';
 
   return (
     <div
@@ -322,7 +359,7 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
             )}
           </div>
 
-          {(!answer.isOffDatabase || primaryResult?.status !== 'ok') && (
+          {(!answer.isOffDatabase || !hasGeminiContent) && (
             <div
               style={{
                 fontSize: 15.5,
@@ -357,8 +394,8 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
         </button>
       </div>
 
-      {/* Loading Indicator while Live Gemini is Thinking / Searching */}
-      {isLoadingPrimary && activeKey && (
+      {/* Brief Pre-Token Indicator (~0.4s before first word streams onto screen) */}
+      {isLoadingPrimary && activeKey && !livePrimaryText && (
         <div
           style={{
             display: 'flex',
@@ -508,8 +545,8 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
         </div>
       )}
 
-      {/* Live Gemini Primary Answer */}
-      {!isLoadingPrimary && primaryResult?.status === 'ok' && primaryResult.text && (
+      {/* Live Gemini Primary Answer (streams live word-by-word as tokens arrive) */}
+      {Boolean(livePrimaryText) && (
         <div
           style={{
             display: 'flex',
@@ -524,9 +561,9 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
             border: '1px solid var(--line)',
           }}
         >
-          {renderGeminiMarkdown(primaryResult.text)}
+          {renderGeminiMarkdown(livePrimaryText)}
 
-          {primaryResult.webSources && primaryResult.webSources.length > 0 && (
+          {primaryResult?.webSources && primaryResult.webSources.length > 0 && (
             <div
               style={{
                 display: 'flex',
@@ -622,7 +659,7 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
         </div>
       )}
 
-      {isFollowUpLoading && (
+      {isFollowUpLoading && effectiveTurns[effectiveTurns.length - 1]?.role === 'user' && (
         <div
           style={{
             display: 'flex',
@@ -703,8 +740,8 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
         </div>
       )}
 
-      {/* Local Bullets (hidden once Live Gemini answered an open-ended off-DB question so there's zero redundant boilerplate) */}
-      {(!answer.isOffDatabase || primaryResult?.status !== 'ok') && answer.bullets.length > 0 && (
+      {/* Local Bullets (hidden once Live Gemini begins answering an open-ended off-DB question) */}
+      {(!answer.isOffDatabase || !hasGeminiContent) && answer.bullets.length > 0 && (
         <ul
           style={{
             margin: 0,

@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { median } from 'd3-array';
 import type { HistoricalSaleRecord, Listing } from '../types';
 import { evaluateGoodDeal } from './intelligence';
@@ -317,49 +317,33 @@ export function buildComprehensiveBellportContext(
       const pseudo = toPseudoListing(h);
       const fit = evaluateRobbieFit(pseudo);
       const deal = evaluateGoodDeal(pseudo, allListings);
-      const flood = (pseudo.features ?? []).find((f) => /zone\s*(?:ae|ve)/i.test(f));
-      return `- ${h.address} (${h.area}${h.belowSC ? ', Below S Country Rd' : ', North of S Country Rd'}): ${fmtShortDollar(h.price)} | ${h.beds}bd/${h.baths}ba | ${h.sqft.toLocaleString()} sqft | ${h.lotAcres.toFixed(2)} ac | built ${h.yearBuilt} | ${h.style} | walk ${h.walkMin}m to Marina/Ferry | feats=[${h.feats.join(',')}] | Fit=${fit.tier ?? 'none'}(${fit.score}/100) | Comp=${deal.status}(${deal.diffPct > 0 ? '+' : ''}${deal.diffPct}%)${flood ? ` | ${flood}` : ''}`;
+      return `- ${h.address} (${h.belowSC ? 'South of SCR' : 'North of SCR'}): ${fmtShortDollar(h.price)}, ${h.beds}bd/${h.baths}ba, ${h.sqft}sf, ${h.lotAcres.toFixed(2)}ac, yr${h.yearBuilt}, ${h.style}, Fit=${fit.tier ?? 'none'}, ${deal.status}`;
     })
     .join('\n');
 
   const compLines = [...salesHistory]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 22)
+    .slice(0, 8)
     .map(
       (r) =>
-        `- ${r.address} (${r.area}${r.belowSC ? ', Below SCR' : ''}): Sold ${r.date} for ${fmtShortDollar(r.price)} | ${r.beds ?? '?'}bd/${r.baths ?? '?'}ba | ${r.sqft ? `${r.sqft} sqft` : '?'} | ${r.acres ?? '?'} ac${r.pool ? ' | Pool' : ''}`
+        `- ${r.address} (${r.belowSC ? 'South' : 'North'}): Sold ${r.date} ${fmtShortDollar(r.price)}, ${r.beds ?? '?'}bd, ${r.acres ?? '?'}ac${r.pool ? ', Pool' : ''}`
     )
     .join('\n');
 
   const savedLines =
     savedHomes.length > 0
       ? savedHomes
-          .slice(0, 12)
-          .map(
-            (h) =>
-              `${h.address} (${h.isForSale ? 'For Sale' : 'Off-Market/Sold'} ${fmtShortDollar(h.price)}, ${h.lotAcres.toFixed(2)} ac, ${h.style})`
-          )
+          .slice(0, 6)
+          .map((h) => `${h.address} (${fmtShortDollar(h.price)})`)
           .join('; ')
-      : 'None favorited yet';
+      : 'None yet';
 
   return [
-    `=== ROBBIE’S BELLPORT VILLAGE SEARCH PROFILE ===`,
-    `- Strict Boundary: Incorporated Village of Bellport, NY ONLY (SWIS 472203, 1.5 sq mi, 1,058 residential parcels). Exclude East Patchogue, Brookhaven Hamlet, and North Bellport outside the Village.`,
-    `- Active / Saved Search Parameters: ${paramPills.join(' · ')}`,
-    `- Buyer Notes ("Ideal Search"): ${idealSearchNotes.trim() || 'Family vacation house; timeless weathered cedar-shingle Cape / Greek Revival / historic lane character; pool or pool-ready lush yard; bonus for detached barn/ADU/pool house; avoid High Ranches, Split-Levels, and generic suburban tract Colonials.'}`,
-    `- Saved Favorite Homes: ${savedLines} (${hiddenCount} homes downvoted/hidden)`,
-    ``,
-    `=== BELLPORT VILLAGE DATASET SNAPSHOT (1,058 RESIDENTIAL PARCELS) ===`,
-    `- Annual Closings: 44 in 2024, 46 in 2025 (~45/yr full-year pace, ~4.3% turnover), 32 in 2026 YTD.`,
-    `- 2024–2026 Closed Median: ${fmtShortDollar(southMed)} Below South Country Rd vs. ${fmtShortDollar(northMed)} North of Main St / South Country Rd.`,
-    `- Pools & Grounds: ${poolCount} Village homes (${Math.round((poolCount / Math.max(1, catalog.length)) * 100)}%) have an in-ground pool; another ${roomPoolCount} have pool-ready grounds (≥0.31 ac).`,
-    `- Resident Amenities: Residents-only Ho-Hum Beach ferry across Great South Bay to Fire Island, Bellport Country Club (18-hole Seth Raynor / Donald Ross-era bayfront golf & tennis), Village Marina & Mothers’ Beach, walkable Main Street shops/dining, Gateway Playhouse.`,
-    ``,
-    `=== ALL ${activeHomes.length} CURRENTLY ACTIVE FOR-SALE VILLAGE LISTINGS ===`,
-    activeLines || '(No active listings loaded)',
-    ``,
-    `=== RECENT CLOSED VILLAGE SALES COMPS (SAMPLE OF 306 CLOSINGS) ===`,
-    compLines,
+    `BUYER PROFILE (Incorporated Bellport Village NY 11713 ONLY, 1,058 homes; exclude E. Patchogue / Brookhaven / N. Bellport):`,
+    `Criteria: ${paramPills.join(' · ')} | Notes: ${idealSearchNotes.trim() || 'Shingled Cape/Greek Revival/historic lane; pool or room for pool; avoid High Ranches & tract boxes.'} | Saved: ${savedLines} (${hiddenCount} hidden)`,
+    `VILLAGE STATS: ~45 sales/yr (44 in '24, 46 in '25, 32 in '26 YTD). Median sold: ${fmtShortDollar(southMed)} Below S Country Rd vs ${fmtShortDollar(northMed)} North. Pools: ${poolCount} existing + ${roomPoolCount} pool-ready.`,
+    `ACTIVE FOR SALE (${activeHomes.length}):\n${activeLines}`,
+    `RECENT SOLD COMPS:\n${compLines}`,
   ].join('\n');
 }
 
@@ -508,7 +492,7 @@ export function answerVillageQuestion(
     return {
       headline: `Complex Question: “${q}”`,
       bullets: [
-        `This question goes beyond static parcel & deed fields — Live Gemini 2.5 Flash + Google Search combines open-web knowledge (zoning/ARB rules, tax rates, construction costs, commute, neighborhood comparisons) with all ${catalog.length.toLocaleString()} Bellport Village homes and your search parameters.`,
+        `This question goes beyond static parcel & deed fields — Live Gemini 3.8 Flash combines open-domain expertise (zoning/ARB rules, tax rates, construction costs, commute, neighborhood comparisons) with all ${catalog.length.toLocaleString()} Bellport Village homes and your search parameters.`,
         `Local Bellport snapshot ready for grounding: ${activeHomes.length} active listings (median ${fmtShortDollar(activeMed)}, ${activeMatching.length} matching your current criteria) and ${salesHistory.length} historical Village closings.`,
       ],
       parameterPills: paramPills,
@@ -726,19 +710,12 @@ export interface LiveGeminiResult {
   errorMessage?: string;
 }
 
-const GEMINI_SYSTEM_PROMPT = `You are Bellport Watch’s Senior Real Estate, Architecture & Local Advisor helping Robbie evaluate a family vacation home strictly inside Incorporated Bellport Village, NY (ZIP 11713, Town of Brookhaven, Suffolk County, SWIS 472203).
-
-CORE OPERATING RULES:
-1. GO BEYOND THE LOCAL DATABASE: Never restrict yourself to local parcel/deed fields! Use Google Search and your deep domain expertise to answer ANY complex, open-ended, financial, regulatory, architectural, renovation, tax, permitting, septic, insurance, commute, lifestyle, or comparative question — even when the subject is NOT in the local database (e.g., Village & Town of Brookhaven property taxes, Bellport Historic District & Architectural Review Board [ARB] rules, gunite/liner pool & pool-house costs and setbacks, Suffolk County I/A OWTS septic systems & grants, coastal AE/VE flood insurance, LIRR/driving commute from NYC, Ho-Hum Beach ferry & Bellport Country Club rules, renovation $/sqft budgets, rental ordinances, schools, or comparing Bellport vs. Quogue / Westhampton / Amagansett / Fire Island / North Fork).
-2. CONNECT TO BELLPORT VILLAGE & ROBBIE’S CRITERIA: Whenever helpful, ground your reasoning in Robbie’s active/saved search parameters and cite real addresses or comps from the Bellport Village Snapshot provided in context.
-3. STYLE & FORMATTING:
-   - Lead immediately with a clear, concrete answer backed by realistic numbers, ranges, or rules.
-   - Use short paragraphs and scannable bullet points (\`- \`) with \`**bold**\` emphasis on key takeaways, dollar figures, and exact Bellport street addresses.
-   - Do not mention "Flood Zone X" (only mention flood zones when discussing coastal AE or VE zones).
-   - Keep responses crisp, practical, and tailored to a discerning second-home buyer (typically 120–260 words unless a detailed breakdown is requested).`;
+const GEMINI_SYSTEM_PROMPT = `You are Bellport Watch’s Senior Real Estate & Architecture Advisor for Robbie’s search strictly inside Incorporated Bellport Village, NY (11713, Town of Brookhaven, Suffolk County).
+1. Answer ANY complex or open-ended question — even when NOT in the local database (taxes, Bellport Historic District & ARB rules, gunite pool & renovation costs, I/A OWTS septic, coastal AE/VE flood insurance, LIRR/driving commute, Ho-Hum Beach ferry, Country Club, short-term rental laws, Hamptons comparisons) — while citing real Bellport Village addresses/comps from context when relevant.
+2. Be crisp, concrete, and fast to scan: lead immediately with the bottom-line numbers/rules, use short bullets (\`- \`) with \`**bold**\` highlights, never mention "Flood Zone X", and keep answers tight (90–175 words unless asked for more).`;
 
 const responseCache = new Map<string, LiveGeminiResult>();
-const keysWithoutSearchGrounding = new Set<string>();
+let stickyFastModel: string | null = null;
 
 function extractWebSourcesFromCandidate(candidate: unknown): QaWebSource[] {
   if (!candidate || typeof candidate !== 'object') return [];
@@ -772,8 +749,11 @@ export async function askBellportGemini(params: {
   contextBriefing: string;
   catalog: UnifiedHome[];
   geminiApiKey?: string;
+  onStreamText?: (partialText: string) => void;
+  signal?: AbortSignal;
 }): Promise<LiveGeminiResult> {
-  const { question, history = [], contextBriefing, catalog, geminiApiKey } = params;
+  const { question, history = [], contextBriefing, catalog, geminiApiKey, onStreamText, signal } =
+    params;
   const trimmedQ = question.trim();
   if (!trimmedQ) return { status: 'needs_key' };
 
@@ -781,10 +761,11 @@ export async function askBellportGemini(params: {
   const cacheKey = `${keyClean ? keyClean.slice(-6) : 'srv'}::${history.length}::${trimmedQ}`;
   const cached = responseCache.get(cacheKey);
   if (cached && cached.status === 'ok') {
+    if (cached.text && onStreamText) onStreamText(cached.text);
     return cached;
   }
 
-  // 1. If no browser key is stored, try local backend `/api/ask` first (works when running dev/prod Node server with GEMINI_API_KEY)
+  // 1. If no browser key is stored, try local backend `/api/ask` first
   if (!keyClean) {
     try {
       const srvResp = await fetch('/api/ask', {
@@ -795,6 +776,7 @@ export async function askBellportGemini(params: {
           history: history.map((h) => ({ role: h.role, text: h.text })),
           contextBriefing,
         }),
+        signal,
       });
       if (srvResp.ok) {
         const data = (await srvResp.json()) as {
@@ -803,9 +785,9 @@ export async function askBellportGemini(params: {
           text?: string;
           webSources?: QaWebSource[];
           usedWebSearch?: boolean;
-          error?: string;
         };
         if (data.ok && data.text) {
+          if (onStreamText) onStreamText(data.text);
           const result: LiveGeminiResult = {
             status: 'ok',
             text: data.text,
@@ -826,7 +808,7 @@ export async function askBellportGemini(params: {
     return { status: 'needs_key' };
   }
 
-  // 2. Direct Live Gemini call using user's device-stored API key (`gemini-2.5-flash` + Google Search grounding)
+  // 2. Direct Streaming Gemini call with LOW thinking budget for sub-second first token!
   const ai = new GoogleGenAI({ apiKey: keyClean });
   const contents = [
     ...history.map((turn, idx) => ({
@@ -835,7 +817,7 @@ export async function askBellportGemini(params: {
         {
           text:
             idx === 0 && turn.role === 'user'
-              ? `${contextBriefing}\n\nUser Question: ${turn.text}`
+              ? `${contextBriefing}\n\nQuestion: ${turn.text}`
               : turn.text,
         },
       ],
@@ -844,60 +826,71 @@ export async function askBellportGemini(params: {
       role: 'user' as const,
       parts: [
         {
-          text:
-            history.length === 0
-              ? `${contextBriefing}\n\nUser Question: ${trimmedQ}`
-              : trimmedQ,
+          text: history.length === 0 ? `${contextBriefing}\n\nQuestion: ${trimmedQ}` : trimmedQ,
         },
       ],
     },
   ];
 
-  // Ordered model cascade supporting newly created Google AI Studio AQ. Auth keys (Free & Paid tiers):
-  // - gemini-3.8-flash (current flagship Flash model on Free & Paid tiers)
-  // - gemini-flash-latest (rolling latest Flash alias)
-  // - gemini-3.5-flash-lite & gemini-2.5-flash-lite (high-throughput Flash-Lite fallbacks)
-  const noSearchKeySig = keyClean.slice(-8);
-  const skipSearchTool = keysWithoutSearchGrounding.has(noSearchKeySig);
-
-  const attempts: Array<{ model: string; useSearch: boolean }> = [
-    ...(skipSearchTool ? [] : [{ model: 'gemini-3.8-flash', useSearch: true }]),
-    { model: 'gemini-3.8-flash', useSearch: false },
-    { model: 'gemini-flash-latest', useSearch: false },
-    { model: 'gemini-3.5-flash-lite', useSearch: false },
-    { model: 'gemini-2.5-flash-lite', useSearch: false },
+  // Prioritize ultra-low-latency streaming with ThinkingLevel.LOW / MINIMAL (no wasted paid-only tool retries!)
+  const defaultOrder: Array<{ model: string; thinking: ThinkingLevel | null }> = [
+    { model: 'gemini-3.8-flash', thinking: ThinkingLevel.LOW },
+    { model: 'gemini-3.5-flash-lite', thinking: ThinkingLevel.MINIMAL },
+    { model: 'gemini-flash-latest', thinking: ThinkingLevel.LOW },
+    { model: 'gemini-2.5-flash-lite', thinking: null },
   ];
 
+  const orderedAttempts = stickyFastModel
+    ? [
+        ...defaultOrder.filter((a) => a.model === stickyFastModel),
+        ...defaultOrder.filter((a) => a.model !== stickyFastModel),
+      ]
+    : defaultOrder;
+
   let lastErr = '';
-  for (const attempt of attempts) {
+  for (const attempt of orderedAttempts) {
+    if (signal?.aborted) return { status: 'error', errorMessage: '' };
     try {
-      const resp = await ai.models.generateContent({
+      const stream = await ai.models.generateContentStream({
         model: attempt.model,
         contents,
         config: {
           systemInstruction: GEMINI_SYSTEM_PROMPT,
-          ...(attempt.useSearch ? { tools: [{ googleSearch: {} }] } : {}),
+          ...(attempt.thinking ? { thinkingConfig: { thinkingLevel: attempt.thinking } } : {}),
         },
       });
-      const text = (resp.text ?? '').trim();
-      if (text) {
-        const webSources = extractWebSourcesFromCandidate(resp.candidates?.[0]);
+
+      let accText = '';
+      let lastCandidate: unknown = undefined;
+      for await (const chunk of stream) {
+        if (signal?.aborted) return { status: 'error', errorMessage: '' };
+        const piece = chunk.text ?? '';
+        if (piece) {
+          accText += piece;
+          if (onStreamText) onStreamText(accText);
+        }
+        if (chunk.candidates?.[0]) {
+          lastCandidate = chunk.candidates[0];
+        }
+      }
+
+      const finalText = accText.trim();
+      if (finalText) {
+        stickyFastModel = attempt.model;
+        const webSources = extractWebSourcesFromCandidate(lastCandidate);
         const result: LiveGeminiResult = {
           status: 'ok',
-          text,
+          text: finalText,
           webSources,
-          mentionedHomes: extractMentionedHomes(text, catalog),
-          usedWebSearch: attempt.useSearch && webSources.length > 0,
+          mentionedHomes: extractMentionedHomes(finalText, catalog),
+          usedWebSearch: webSources.length > 0,
         };
         responseCache.set(cacheKey, result);
         return result;
       }
     } catch (err) {
+      if (signal?.aborted) return { status: 'error', errorMessage: '' };
       lastErr = err instanceof Error ? err.message : String(err);
-      if (attempt.useSearch) {
-        // Remember if this Free-Tier key does not include the paid Google Search grounding tool
-        keysWithoutSearchGrounding.add(noSearchKeySig);
-      }
       if (/API_KEY_INVALID|invalid api key|API key not valid|ACCESS_TOKEN_TYPE_UNSUPPORTED/i.test(lastErr)) {
         return {
           status: 'error',

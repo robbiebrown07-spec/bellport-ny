@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { detectQuestionQuery, normalizeBellportStreetText, parseNaturalLanguageQuery } from './nlSearch';
 
 export interface GeminiSearchPlan {
@@ -58,25 +58,26 @@ export async function planGeminiPropertySearch(params: {
   const cached = planCache.get(cacheKey);
   if (cached) return cached;
 
-  const models = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-flash-latest',
-    'gemini-2.5-flash-lite',
+  const models: Array<{ id: string; thinking: ThinkingLevel | null }> = [
+    { id: 'gemini-3.5-flash-lite', thinking: ThinkingLevel.MINIMAL },
+    { id: 'gemini-3.8-flash', thinking: ThinkingLevel.LOW },
+    { id: 'gemini-flash-latest', thinking: ThinkingLevel.LOW },
+    { id: 'gemini-2.5-flash-lite', thinking: null },
   ];
 
   const ai = new GoogleGenAI({ apiKey: key });
   let rawJson = '';
-  for (const modelId of models) {
+  for (const m of models) {
     try {
       const resp = await ai.models.generateContent({
-        model: modelId,
+        model: m.id,
         contents: `Translate this Bellport Village, NY natural-language home search into exact structured filter criteria.
 Active Village listings reference (for optional recommendedParcelIds if specific active homes are an especially strong semantic match):
 ${params.activeListingsDigest}
 
 User search query: "${q}"`,
         config: {
+          ...(m.thinking ? { thinkingConfig: { thinkingLevel: m.thinking } } : {}),
           systemInstruction: `You are the semantic search interpreter for Bellport Watch (all 1,058 residential homes in Incorporated Bellport Village, NY).
 Convert nuanced natural-language property searches into accurate structured filters:
 - Only populate constraints implied by the user's query (leave unspecified numbers as 0 and unspecified strings as "").
