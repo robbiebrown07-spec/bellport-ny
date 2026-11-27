@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Heart, LayoutGrid, List, RotateCcw, ThumbsDown } from 'lucide-react';
 import { median } from 'd3-array';
 import type {
@@ -76,11 +76,43 @@ export const App: React.FC = () => {
   const [layout, setLayout] = useState<FilterState['layout']>('grid');
   const [homesLimit, setHomesLimit] = useState(24);
   const [selectedParcelOrListingId, setSelectedParcelOrListingId] = useState<string | null>(null);
+  const pushedHistoryForDrawerRef = useRef(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const lastRemoteCheckRef = useRef<number>(0);
   const latestStateRef = useRef<PersistedAppState | null>(null);
+
+  const openPropertyDrawer = useCallback((id: string | null) => {
+    if (!id) {
+      setSelectedParcelOrListingId(null);
+      if (pushedHistoryForDrawerRef.current && typeof window !== 'undefined') {
+        pushedHistoryForDrawerRef.current = false;
+        window.history.back();
+      }
+      return;
+    }
+    setSelectedParcelOrListingId((prev) => {
+      if (!prev && typeof window !== 'undefined') {
+        window.history.pushState({ bellportPropertyDrawer: id }, '');
+        pushedHistoryForDrawerRef.current = true;
+      } else if (prev && typeof window !== 'undefined' && pushedHistoryForDrawerRef.current) {
+        window.history.replaceState({ bellportPropertyDrawer: id }, '');
+      }
+      return id;
+    });
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (pushedHistoryForDrawerRef.current) {
+        pushedHistoryForDrawerRef.current = false;
+        setSelectedParcelOrListingId(null);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -400,7 +432,7 @@ export const App: React.FC = () => {
       geminiApiKey,
       geminiPlan: activeGeminiPlan,
       onSaveGeminiKey: setGeminiApiKey,
-      onOpenHome: (pid: string) => setSelectedParcelOrListingId(pid),
+      onOpenHome: (pid: string) => openPropertyDrawer(pid),
       onOpenSavedTab: () => setActiveView('favorites'),
     }),
     [
@@ -409,6 +441,7 @@ export const App: React.FC = () => {
       catalog,
       geminiApiKey,
       idealSearchNotes,
+      openPropertyDrawer,
       salesHistory,
       setGeminiApiKey,
       tasteFilters,
@@ -437,6 +470,11 @@ export const App: React.FC = () => {
       ) ?? null
     );
   }, [catalog, selectedParcelOrListingId]);
+
+  const drawerMatchedIndex = useMemo(() => {
+    if (!drawerHome) return -1;
+    return matchedHomes.findIndex((h) => h.parcelId === drawerHome.parcelId);
+  }, [drawerHome, matchedHomes]);
 
   const drawerListing: Listing | null = useMemo(() => {
     if (drawerHome) return toPseudoListing(drawerHome);
@@ -556,7 +594,7 @@ export const App: React.FC = () => {
   };
 
   const deleteListing = (id: string) => {
-    setSelectedParcelOrListingId(null);
+    openPropertyDrawer(null);
     setAppState((prev) =>
       prev ? { ...prev, listings: prev.listings.filter((item) => item.id !== id) } : prev
     );
@@ -589,6 +627,19 @@ export const App: React.FC = () => {
 
   const activeForSaleCount = catalog.filter((h) => h.isForSale && !h.isHidden).length;
 
+  const drawerBackLabel =
+    activeView === 'map'
+      ? 'Back to Map'
+      : activeView === 'listings'
+        ? 'Back to Homes'
+        : activeView === 'favorites'
+          ? 'Back to Saved'
+          : activeView === 'alerts'
+            ? 'Back to Alerts'
+            : activeView === 'history'
+              ? 'Back to Market'
+              : 'Back to Guide';
+
   return (
     <>
       <TopBar
@@ -612,7 +663,7 @@ export const App: React.FC = () => {
               setHomesLimit(24);
             }}
             privacyBlur={appState.preferences.privacyBlur}
-            onOpenHomeDrawer={(parcelId) => setSelectedParcelOrListingId(parcelId)}
+            onOpenHomeDrawer={(parcelId) => openPropertyDrawer(parcelId)}
             onSyncMetaUpdate={(meta) => setSyncMeta(meta)}
           />
         )}
@@ -637,7 +688,7 @@ export const App: React.FC = () => {
               setUnifiedFilters(next);
               setActiveView('map');
             }}
-            onOpenListing={(id) => setSelectedParcelOrListingId(id)}
+            onOpenListing={(id) => openPropertyDrawer(id)}
             onToggleFavorite={(id) => {
               const found = catalog.find(
                 (h) => h.parcelId === id || h.listingId === id || h.uid === id
@@ -663,7 +714,7 @@ export const App: React.FC = () => {
             onAddRule={addEmailAlert}
             onToggleRule={toggleEmailAlert}
             onDeleteRule={deleteEmailAlert}
-            onOpenListing={(id) => setSelectedParcelOrListingId(id)}
+            onOpenListing={(id) => openPropertyDrawer(id)}
           />
         )}
 
@@ -671,7 +722,7 @@ export const App: React.FC = () => {
           <PriceDropsHistoryView
             listings={allListings}
             privacyBlur={appState.preferences.privacyBlur}
-            onOpenListing={(id) => setSelectedParcelOrListingId(id)}
+            onOpenListing={(id) => openPropertyDrawer(id)}
           />
         )}
 
@@ -679,7 +730,7 @@ export const App: React.FC = () => {
           <AboutBellportView
             pois={parcelsBundle?.pois ?? []}
             catalog={catalog}
-            onOpenListing={(id) => setSelectedParcelOrListingId(id)}
+            onOpenListing={(id) => openPropertyDrawer(id)}
             onJumpToMap={() => setActiveView('map')}
           />
         )}
@@ -876,7 +927,7 @@ export const App: React.FC = () => {
                           <article className="listing-card" style={{ height: '100%' }}>
                             <div
                               className="listing-card__media"
-                              onClick={() => setSelectedParcelOrListingId(h.parcelId)}
+                              onClick={() => openPropertyDrawer(h.parcelId)}
                             >
                               <PropertyIllustration
                                 archetype={h.archetype}
@@ -991,7 +1042,7 @@ export const App: React.FC = () => {
 
                                 <h3
                                   className="listing-card__address"
-                                  onClick={() => setSelectedParcelOrListingId(h.parcelId)}
+                                  onClick={() => openPropertyDrawer(h.parcelId)}
                                 >
                                   <HighlightedText
                                     text={h.address}
@@ -1085,7 +1136,7 @@ export const App: React.FC = () => {
                           return (
                             <tr
                               key={h.parcelId}
-                              onClick={() => setSelectedParcelOrListingId(h.parcelId)}
+                              onClick={() => openPropertyDrawer(h.parcelId)}
                             >
                               <td onClick={(e) => e.stopPropagation()}>
                                 <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -1192,11 +1243,20 @@ export const App: React.FC = () => {
         privacyBlur={appState.preferences.privacyBlur}
         searchQuery={unifiedFilters.nlQuery}
         isHidden={Boolean(drawerHome?.isHidden)}
-        hasPrev={false}
-        hasNext={false}
-        onPrev={() => {}}
-        onNext={() => {}}
-        onClose={() => setSelectedParcelOrListingId(null)}
+        backLabel={drawerBackLabel}
+        hasPrev={drawerMatchedIndex > 0}
+        hasNext={drawerMatchedIndex >= 0 && drawerMatchedIndex < matchedHomes.length - 1}
+        onPrev={() => {
+          if (drawerMatchedIndex > 0) {
+            openPropertyDrawer(matchedHomes[drawerMatchedIndex - 1].parcelId);
+          }
+        }}
+        onNext={() => {
+          if (drawerMatchedIndex >= 0 && drawerMatchedIndex < matchedHomes.length - 1) {
+            openPropertyDrawer(matchedHomes[drawerMatchedIndex + 1].parcelId);
+          }
+        }}
+        onClose={() => openPropertyDrawer(null)}
         onUpdateListing={updateListing}
         onToggleHidden={
           drawerHome

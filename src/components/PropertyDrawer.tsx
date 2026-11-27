@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -40,6 +41,7 @@ interface PropertyDrawerProps {
   privacyBlur: boolean;
   searchQuery: string;
   isHidden?: boolean;
+  backLabel?: string;
   hasPrev: boolean;
   hasNext: boolean;
   onPrev: () => void;
@@ -57,6 +59,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
   privacyBlur,
   searchQuery,
   isHidden = false,
+  backLabel = 'Back',
   hasPrev,
   hasNext,
   onPrev,
@@ -68,9 +71,13 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
 }) => {
   const [newTag, setNewTag] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!listing) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const inInput =
@@ -92,7 +99,10 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [listing, hasPrev, hasNext, onPrev, onNext, onClose]);
 
   if (!listing) return null;
@@ -147,34 +157,42 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="drawer">
+      <div
+        className="drawer"
+        onTouchStart={(e) => {
+          if (e.touches.length === 1 && e.touches[0].clientX <= 28) {
+            edgeSwipeStartRef.current = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+            };
+          } else {
+            edgeSwipeStartRef.current = null;
+          }
+        }}
+        onTouchEnd={(e) => {
+          const start = edgeSwipeStartRef.current;
+          edgeSwipeStartRef.current = null;
+          if (!start || e.changedTouches.length === 0) return;
+          const dx = e.changedTouches[0].clientX - start.x;
+          const dy = Math.abs(e.changedTouches[0].clientY - start.y);
+          if (dx > 75 && dy < 48) {
+            onClose();
+          }
+        }}
+      >
         <div className="drawer__header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              className="icon-btn"
-              disabled={!hasPrev}
-              onClick={onPrev}
-              title="Previous listing (←)"
-              aria-label="Previous listing"
-              style={{ opacity: hasPrev ? 1 : 0.4 }}
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              disabled={!hasNext}
-              onClick={onNext}
-              title="Next listing (→)"
-              aria-label="Next listing"
-              style={{ opacity: hasNext ? 1 : 0.4 }}
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
+          <button
+            id="btn-back-drawer"
+            type="button"
+            className="drawer__back-btn"
+            onClick={onClose}
+            aria-label={backLabel}
+          >
+            <ArrowLeft size={16} />
+            <span>{backLabel}</span>
+          </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <button
               type="button"
               className={`icon-btn ${listing.isFavorite ? 'is-active' : ''}`}
@@ -182,6 +200,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 onUpdateListing(listing.id, { isFavorite: !listing.isFavorite })
               }
               aria-pressed={Boolean(listing.isFavorite)}
+              style={{ minWidth: 40, minHeight: 40, padding: '0 10px' }}
             >
               <Heart
                 size={15}
@@ -198,18 +217,21 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 onClick={onToggleHidden}
                 aria-pressed={isHidden}
                 title={isHidden ? 'Restore to search results' : 'Remove from search results'}
-                style={
-                  isHidden
+                style={{
+                  minWidth: 40,
+                  minHeight: 40,
+                  padding: '0 10px',
+                  ...(isHidden
                     ? { background: '#fce8e6', color: '#c5221f', borderColor: 'rgba(197,34,31,0.3)' }
-                    : undefined
-                }
+                    : {}),
+                }}
               >
                 <ThumbsDown
                   size={15}
                   fill={isHidden ? '#c5221f' : 'none'}
                   color={isHidden ? '#c5221f' : 'currentColor'}
                 />
-                <span>{isHidden ? 'Hidden · Restore' : 'Not for Me'}</span>
+                <span>{isHidden ? 'Restore' : 'Pass'}</span>
               </button>
             )}
 
@@ -219,8 +241,9 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               className="icon-btn"
               onClick={onClose}
               aria-label="Close property details"
+              style={{ minWidth: 40, minHeight: 40, padding: 0, flexShrink: 0 }}
             >
-              <X size={16} />
+              <X size={17} />
             </button>
           </div>
         </div>
@@ -276,7 +299,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
               gap: 12,
               padding: 16,
               borderRadius: 'var(--radius-sm)',
@@ -673,6 +696,55 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Bottom Back & Prev/Next Bar (easy thumb reach after scrolling down a listing) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              paddingTop: 12,
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <button
+              type="button"
+              className="drawer__back-btn"
+              onClick={onClose}
+            >
+              <ArrowLeft size={16} />
+              <span>{backLabel}</span>
+            </button>
+
+            {(hasPrev || hasNext) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={!hasPrev}
+                  onClick={onPrev}
+                  aria-label="Previous home"
+                  style={{ opacity: hasPrev ? 1 : 0.4, minHeight: 40, padding: '0 11px' }}
+                >
+                  <ChevronLeft size={16} />
+                  <span>Prev</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={!hasNext}
+                  onClick={onNext}
+                  aria-label="Next home"
+                  style={{ opacity: hasNext ? 1 : 0.4, minHeight: 40, padding: '0 11px' }}
+                >
+                  <span>Next</span>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
