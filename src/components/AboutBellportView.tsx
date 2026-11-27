@@ -23,6 +23,7 @@ import {
   type UnifiedHome,
 } from '../lib/unifiedCatalog';
 import { ScrollReveal } from './ScrollReveal';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface AboutBellportViewProps {
   pois: VillagePoi[];
@@ -194,6 +195,38 @@ export const AboutBellportView: React.FC<AboutBellportViewProps> = ({
                 <strong style={{ color: 'var(--ink)' }}>Ho-Hum Beach</strong> — the Village’s
                 private oceanfront tract cutting all the way across Fire Island from bay to surf.
               </p>
+            </div>
+
+            {/* Ticking Village At-a-Glance KPI Strip */}
+            <div className="pulse-kpi-strip" style={{ marginTop: 2 }}>
+              <div className="pulse-kpi-strip__tile" style={{ background: 'var(--surface-subtle)' }}>
+                <span className="pulse-kpi-strip__label">Village Residences</span>
+                <strong className="pulse-kpi-strip__val">
+                  <AnimatedNumber value={catalog.length || 1058} animateOnView={false} />
+                </strong>
+                <span className="pulse-kpi-strip__sub">Incorporated 1.5 sq mi</span>
+              </div>
+              <div className="pulse-kpi-strip__tile" style={{ background: 'var(--surface-subtle)' }}>
+                <span className="pulse-kpi-strip__label">Annual Turnover</span>
+                <strong className="pulse-kpi-strip__val">
+                  <AnimatedNumber value={45} prefix="~" suffix=" / yr" animateOnView={false} />
+                </strong>
+                <span className="pulse-kpi-strip__sub">~4.3% of Village homes</span>
+              </div>
+              <div className="pulse-kpi-strip__tile" style={{ background: 'var(--surface-subtle)' }}>
+                <span className="pulse-kpi-strip__label">Ho-Hum Ferry</span>
+                <strong className="pulse-kpi-strip__val">
+                  <AnimatedNumber value={8} suffix=" min" animateOnView={false} />
+                </strong>
+                <span className="pulse-kpi-strip__sub">Residents-only Fire Island beach</span>
+              </div>
+              <div className="pulse-kpi-strip__tile" style={{ background: 'var(--surface-subtle)' }}>
+                <span className="pulse-kpi-strip__label">NYC Distance</span>
+                <strong className="pulse-kpi-strip__val">
+                  <AnimatedNumber value={62} suffix=" mi" animateOnView={false} />
+                </strong>
+                <span className="pulse-kpi-strip__sub">~30–45m closer than Hamptons</span>
+              </div>
             </div>
 
             {/* Crisp Editorial Triptych */}

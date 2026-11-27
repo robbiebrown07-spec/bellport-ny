@@ -7,6 +7,7 @@ import { fmtShortDollar, resolveAssetUrl } from '../lib/unifiedCatalog';
 import { ValuationBadge } from './ValuationBadge';
 import { SalesOverTimeModule } from './SalesOverTimeModule';
 import { ScrollReveal } from './ScrollReveal';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface PriceDropsHistoryViewProps {
   listings: Listing[];
@@ -260,12 +261,19 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                   {fmtNiceDate(todayIso)} ({summary.spanDays} Days)
                 </span>
                 <h2 style={{ fontSize: 22, margin: 0 }}>
-                  Active Listing Price Trajectories ({seriesData.length} Homes)
+                  Active Listing Price Trajectories (
+                  <AnimatedNumber value={seriesData.length} /> Homes)
                 </h2>
                 <p style={{ fontSize: 13.5, color: 'var(--ink-2)', margin: '4px 0 0' }}>
-                  All {seriesData.length} active Bellport Village listings plotted on one timeline —{' '}
-                  <strong>{summary.reducedCount} cut price</strong>,{' '}
-                  <strong>{summary.steadyCount} held steady</strong>
+                  All <AnimatedNumber value={seriesData.length} /> active Bellport Village listings
+                  plotted on one timeline —{' '}
+                  <strong>
+                    <AnimatedNumber value={summary.reducedCount} /> cut price
+                  </strong>
+                  ,{' '}
+                  <strong>
+                    <AnimatedNumber value={summary.steadyCount} /> held steady
+                  </strong>
                   {summary.risenCount > 0 ? `, ${summary.risenCount} increased` : ''}.
                 </p>
               </div>
@@ -285,9 +293,8 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                     Average Change ({summary.spanDays}d)
                   </div>
                   <strong style={{ fontSize: 16, fontFamily: 'var(--font-mono)' }}>
-                    {summary.avgPct > 0 ? '+' : ''}
-                    {summary.avgPct}% ({summary.avgDollar > 0 ? '+' : ''}
-                    {fmtShortDollar(summary.avgDollar)})
+                    <AnimatedNumber value={summary.avgPct} format="signedPct" decimals={1} /> (
+                    <AnimatedNumber value={summary.avgDollar} format="signedShortDollar" />)
                   </strong>
                 </div>
 
@@ -409,7 +416,10 @@ export const PriceDropsHistoryView: React.FC<PriceDropsHistoryViewProps> = ({
                       }}
                     >
                       <path
+                        key={`traj-${s.listing.id}-${chartMode}`}
                         d={dPath}
+                        pathLength={1}
+                        className="chart-draw-path"
                         fill="none"
                         stroke={s.color}
                         strokeWidth={isFoc ? 3.4 : s.netPct !== 0 ? 2.1 : 1.4}

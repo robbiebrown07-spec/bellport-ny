@@ -56,6 +56,8 @@ import { ValuationBadge } from './ValuationBadge';
 import { RobbieFitBadge } from './RobbieFitBadge';
 import { SkimmablePropertyNotes } from './SkimmablePropertyNotes';
 import { ScrollReveal } from './ScrollReveal';
+import { AnimatedNumber } from './AnimatedNumber';
+import { median } from 'd3-array';
 import { useVillageQa } from '../lib/villageQa';
 
 interface VillageParcelMapViewProps {
@@ -397,6 +399,36 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     () => (selectedParcelId ? (homeByParcelId.get(selectedParcelId) ?? null) : null),
     [homeByParcelId, selectedParcelId]
   );
+
+  const pulseStats = useMemo(() => {
+    const medPrice = Math.round(median(matchedHomes, (h) => h.price) ?? 0);
+    const withSqft = matchedHomes.filter((h) => h.sqft > 0);
+    const medPpsf = Math.round(median(withSqft, (h) => h.price / h.sqft) ?? 0);
+    const fitCount = matchedHomes.filter((h) => Boolean(evaluateRobbieFit(toPseudoListing(h)).tier))
+      .length;
+    const belowScCount = matchedHomes.filter((h) => h.belowSC).length;
+    return { medPrice, medPpsf, fitCount, belowScCount };
+  }, [matchedHomes]);
+
+  // Brief 1.8s radar lock-on pulse whenever a parcel is selected (or jumped to via "Show on Map"),
+  // settling to 0 afterward so idle battery usage is zero.
+  const [selectionPulse, setSelectionPulse] = useState(0);
+  useEffect(() => {
+    if (!selectedParcelId || typeof window === 'undefined') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    let rafId = 0;
+    const start = performance.now();
+    const duration = 1800;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      setSelectionPulse(t < 1 ? t : 0);
+      if (t < 1) {
+        rafId = window.requestAnimationFrame(step);
+      }
+    };
+    rafId = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [selectedParcelId]);
 
   const hitTestStreetLabel = useCallback(
     (mx: number, my: number): PlacedStreetLabelHitbox | null => {
@@ -1131,16 +1163,28 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     if (selectedParcel && !selectedParcel.underwater) {
       ctx.save();
       ctx.lineJoin = 'round';
+      const pulseWave = selectionPulse > 0 ? Math.sin(selectionPulse * Math.PI * 2) * 0.5 + 0.5 : 0;
       for (const ring of selectedParcel.rings) {
         traceRing(ring);
-        ctx.strokeStyle = 'rgba(234, 67, 53, 0.36)';
-        ctx.lineWidth = 10.0;
+        ctx.strokeStyle = `rgba(234, 67, 53, ${(0.34 + pulseWave * 0.22).toFixed(2)})`;
+        ctx.lineWidth = 10.0 + pulseWave * 5.0;
         ctx.stroke();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.94)';
         ctx.lineWidth = 5.4;
         ctx.stroke();
         ctx.strokeStyle = '#ea4335';
-        ctx.lineWidth = 3.6;
+        ctx.lineWidth = 3.6 + pulseWave * 0.8;
+        ctx.stroke();
+      }
+      if (selectionPulse > 0) {
+        const [sx, sy] = projectWith(selectedParcel.lon, selectedParcel.lat, width, height, view);
+        const wave = (selectionPulse * 2) % 1;
+        const radius = 10 + wave * 34;
+        const alpha = (1 - wave) * 0.55;
+        ctx.beginPath();
+        ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(234, 67, 53, ${alpha.toFixed(2)})`;
+        ctx.lineWidth = 2.2;
         ctx.stroke();
       }
       ctx.restore();
@@ -1396,6 +1440,7 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
     matchedIds,
     projectWith,
     selectedParcel,
+    selectionPulse,
     unifiedFilters.belowSC,
     unifiedFilters.builtRecent,
     unifiedFilters.builtYears,
@@ -1614,6 +1659,67 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
           onChange={applyFilters}
           context="map"
         />
+
+        {/* Dynamic Live Village Pulse KPI Strip (ticks up fast on load & live on filter changes) */}
+        {bundle && (
+          <div className="pulse-kpi-strip" aria-label="Live Bellport Village market pulse">
+            <div className="pulse-kpi-strip__tile">
+              <span className="pulse-kpi-strip__label">
+                <span className="live-pulse-dot" aria-hidden="true" />
+                <span>{filtering ? 'Matching Homes' : 'Active For Sale'}</span>
+              </span>
+              <strong className="pulse-kpi-strip__val">
+                <AnimatedNumber value={matchedHomes.length} animateOnView={false} />
+              </strong>
+              <span className="pulse-kpi-strip__sub">
+                {filtering
+                  ? `of 1,058 Village residences`
+                  : `${pulseStats.belowScCount} south of Main St`}
+              </span>
+            </div>
+
+            <div className="pulse-kpi-strip__tile">
+              <span className="pulse-kpi-strip__label">Median Price</span>
+              <strong className="pulse-kpi-strip__val priv-val">
+                {pulseStats.medPrice > 0 ? (
+                  <AnimatedNumber
+                    value={pulseStats.medPrice}
+                    format="shortDollar"
+                    animateOnView={false}
+                  />
+                ) : (
+                  '—'
+                )}
+              </strong>
+              <span className="pulse-kpi-strip__sub">Incorporated Bellport Village</span>
+            </div>
+
+            <div className="pulse-kpi-strip__tile">
+              <span className="pulse-kpi-strip__label">Median $/Sq Ft</span>
+              <strong className="pulse-kpi-strip__val priv-val">
+                {pulseStats.medPpsf > 0 ? (
+                  <AnimatedNumber
+                    value={pulseStats.medPpsf}
+                    format="currency"
+                    suffix="/ft²"
+                    animateOnView={false}
+                  />
+                ) : (
+                  '—'
+                )}
+              </strong>
+              <span className="pulse-kpi-strip__sub">Interior valuation benchmark</span>
+            </div>
+
+            <div className="pulse-kpi-strip__tile">
+              <span className="pulse-kpi-strip__label">★ Strong / Perfect Fit</span>
+              <strong className="pulse-kpi-strip__val" style={{ color: 'var(--accent)' }}>
+                <AnimatedNumber value={pulseStats.fitCount} animateOnView={false} />
+              </strong>
+              <span className="pulse-kpi-strip__sub">Classic Village architecture</span>
+            </div>
+          </div>
+        )}
 
         {/* Map Key + Active Highlights */}
         <div
@@ -2685,8 +2791,8 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                         <div>
                           <div className="listing-card__top">
                             <span className="listing-card__price priv-val">
-                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
-                              {h.price.toLocaleString()}
+                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}
+                              <AnimatedNumber value={h.price} format="currency" />
                             </span>
                             <ValuationBadge listing={pseudo} deal={deal} compact />
                           </div>
@@ -2729,19 +2835,32 @@ export const VillageParcelMapView: React.FC<VillageParcelMapViewProps> = ({
                             <span>Bd/Ba</span>
                           </div>
                           <div>
-                            <strong>{h.sqft.toLocaleString()}</strong>
+                            <strong>
+                              <AnimatedNumber value={h.sqft} />
+                            </strong>
                             <span>Sq Ft</span>
                           </div>
                           <div>
-                            <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
+                            <strong className="priv-val">
+                              {ppsf > 0 ? <AnimatedNumber value={ppsf} format="currency" /> : '—'}
+                            </strong>
                             <span>$/Ft²</span>
                           </div>
                           <div>
-                            <strong>{h.lotAcres}</strong>
+                            <strong>
+                              <AnimatedNumber value={h.lotAcres} format="decimal" decimals={2} />
+                            </strong>
                             <span>Acres</span>
                           </div>
                           <div>
-                            <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
+                            <strong style={{ color: 'var(--accent)' }}>
+                              <AnimatedNumber
+                                value={beauty.score10}
+                                format="decimal"
+                                decimals={1}
+                                suffix="/10"
+                              />
+                            </strong>
                             <span>Beauty</span>
                           </div>
                         </div>

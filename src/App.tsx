@@ -31,7 +31,6 @@ import { VillageQaContext } from './lib/villageQa';
 import {
   INITIAL_UNIFIED_FILTERS,
   buildUnifiedVillageCatalog,
-  fmtShortDollar,
   homeMatchesUnifiedFilters,
   resolveAssetUrl,
   toPseudoListing,
@@ -53,6 +52,7 @@ import { UnifiedFilterBar } from './components/UnifiedFilterBar';
 import { ValuationBadge } from './components/ValuationBadge';
 import { RobbieFitBadge } from './components/RobbieFitBadge';
 import { ScrollReveal } from './components/ScrollReveal';
+import { AnimatedNumber } from './components/AnimatedNumber';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<PersistedAppState | null>(null);
@@ -810,7 +810,9 @@ export const App: React.FC = () => {
                         setHomesLimit(24);
                       }}
                     >
-                      <span>For Sale ({activeForSaleCount})</span>
+                      <span>
+                        For Sale (<AnimatedNumber value={activeForSaleCount} animateOnView={false} />)
+                      </span>
                     </button>
 
                     <button
@@ -828,7 +830,9 @@ export const App: React.FC = () => {
                         setHomesLimit(36);
                       }}
                     >
-                      <span>All Past Sales (236)</span>
+                      <span>
+                        All Past Sales (<AnimatedNumber value={236} animateOnView={false} />)
+                      </span>
                     </button>
 
                     <button
@@ -844,18 +848,26 @@ export const App: React.FC = () => {
                         setHomesLimit(36);
                       }}
                     >
-                      <span>All Village Homes (1,058)</span>
+                      <span>
+                        All Village Homes (<AnimatedNumber value={catalog.length || 1058} animateOnView={false} />)
+                      </span>
                     </button>
 
                     <span style={{ color: 'var(--ink-2)', marginLeft: 6 }}>
-                      <strong>{matchedHomes.length.toLocaleString()}</strong>{' '}
+                      <strong>
+                        <AnimatedNumber value={matchedHomes.length} animateOnView={false} />
+                      </strong>{' '}
                       {matchedHomes.length === 1 ? 'home' : 'homes'}
                       {medianPrice > 0 && (
                         <span className="priv-val">
                           {' '}
                           · Median{' '}
                           <strong style={{ color: 'var(--ink)' }}>
-                            {fmtShortDollar(medianPrice)}
+                            <AnimatedNumber
+                              value={medianPrice}
+                              format="shortDollar"
+                              animateOnView={false}
+                            />
                           </strong>
                         </span>
                       )}
@@ -1060,8 +1072,8 @@ export const App: React.FC = () => {
                               <div>
                                 <div className="listing-card__top">
                                   <span className="listing-card__price priv-val">
-                                    {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
-                                    {h.price.toLocaleString()}
+                                    {h.isForSale || h.hasPastSale ? '' : 'Est. '}
+                                    <AnimatedNumber value={h.price} format="currency" />
                                   </span>
                                   <ValuationBadge listing={pseudo} deal={deal} compact />
                                 </div>
@@ -1111,19 +1123,32 @@ export const App: React.FC = () => {
                                   <span>Bd/Ba</span>
                                 </div>
                                 <div>
-                                  <strong>{h.sqft.toLocaleString()}</strong>
+                                  <strong>
+                                    <AnimatedNumber value={h.sqft} />
+                                  </strong>
                                   <span>Sq Ft</span>
                                 </div>
                                 <div>
-                                  <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
+                                  <strong className="priv-val">
+                                    {ppsf > 0 ? <AnimatedNumber value={ppsf} format="currency" /> : '—'}
+                                  </strong>
                                   <span>$/Ft²</span>
                                 </div>
                                 <div>
-                                  <strong>{h.lotAcres}</strong>
+                                  <strong>
+                                    <AnimatedNumber value={h.lotAcres} format="decimal" decimals={2} />
+                                  </strong>
                                   <span>Acres</span>
                                 </div>
                                 <div>
-                                  <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
+                                  <strong style={{ color: 'var(--accent)' }}>
+                                    <AnimatedNumber
+                                      value={beauty.score10}
+                                      format="decimal"
+                                      decimals={1}
+                                      suffix="/10"
+                                    />
+                                  </strong>
                                   <span>Beauty</span>
                                 </div>
                               </div>

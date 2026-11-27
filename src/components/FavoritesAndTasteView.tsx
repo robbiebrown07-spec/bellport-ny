@@ -22,6 +22,7 @@ import { PropertyIllustration } from './PropertyIllustration';
 import { ValuationBadge } from './ValuationBadge';
 import { RobbieFitBadge } from './RobbieFitBadge';
 import { ScrollReveal } from './ScrollReveal';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface FavoritesAndTasteViewProps {
   catalog: UnifiedHome[];
@@ -465,8 +466,8 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                         <div>
                           <div className="listing-card__top">
                             <span className="listing-card__price priv-val">
-                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
-                              {h.price.toLocaleString()}
+                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}
+                              <AnimatedNumber value={h.price} format="currency" />
                             </span>
                             <ValuationBadge listing={pseudo} deal={deal} compact />
                           </div>
@@ -492,19 +493,32 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                             <span>Bd/Ba</span>
                           </div>
                           <div>
-                            <strong>{h.sqft.toLocaleString()}</strong>
+                            <strong>
+                              <AnimatedNumber value={h.sqft} />
+                            </strong>
                             <span>Sq Ft</span>
                           </div>
                           <div>
-                            <strong className="priv-val">{ppsf > 0 ? `$${ppsf}` : '—'}</strong>
+                            <strong className="priv-val">
+                              {ppsf > 0 ? <AnimatedNumber value={ppsf} format="currency" /> : '—'}
+                            </strong>
                             <span>$/Ft²</span>
                           </div>
                           <div>
-                            <strong>{h.lotAcres}</strong>
+                            <strong>
+                              <AnimatedNumber value={h.lotAcres} format="decimal" decimals={2} />
+                            </strong>
                             <span>Acres</span>
                           </div>
                           <div>
-                            <strong style={{ color: 'var(--accent)' }}>{beauty.display}</strong>
+                            <strong style={{ color: 'var(--accent)' }}>
+                              <AnimatedNumber
+                                value={beauty.score10}
+                                format="decimal"
+                                decimals={1}
+                                suffix="/10"
+                              />
+                            </strong>
                             <span>Beauty</span>
                           </div>
                         </div>
@@ -570,7 +584,7 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                                 borderColor: 'rgba(26,115,232,0.28)',
                               }}
                             >
-                              {matchPct}% Taste Match
+                              <AnimatedNumber value={matchPct} suffix="% Taste Match" />
                             </span>
                             <RobbieFitBadge listing={pseudo} fit={fit} compact />
                           </div>
@@ -638,8 +652,8 @@ export const FavoritesAndTasteView: React.FC<FavoritesAndTasteViewProps> = ({
                         <div>
                           <div className="listing-card__top">
                             <span className="listing-card__price priv-val">
-                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}$
-                              {h.price.toLocaleString()}
+                              {h.isForSale || h.hasPastSale ? '' : 'Est. '}
+                              <AnimatedNumber value={h.price} format="currency" />
                             </span>
                             <ValuationBadge listing={pseudo} deal={deal} compact />
                           </div>

@@ -9,6 +9,7 @@ import {
   parseFlexibleNumber,
   resolveAssetUrl,
 } from '../lib/unifiedCatalog';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface SalesOverTimeModuleProps {
   privacyBlur: boolean;
@@ -268,13 +269,24 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
           </span>
           <h2 style={{ fontSize: 22, margin: 0 }}>Home Prices Over Time</h2>
           <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: '4px 0 0', lineHeight: 1.5 }}>
-            {filtered.length} closed Bellport Village sales across {uniqueHomesCount} homes ({domainStartYear}–2026)
+            <strong>
+              <AnimatedNumber value={filtered.length} />
+            </strong>{' '}
+            closed Bellport Village sales across{' '}
+            <strong>
+              <AnimatedNumber value={uniqueHomesCount} />
+            </strong>{' '}
+            homes ({domainStartYear}–2026)
             {latestMedian > 0 && (
               <span className="priv-val">
                 {' '}
                 · Latest median{' '}
                 <strong style={{ color: 'var(--ink)' }}>
-                  {metric === 'ppsf' ? `$${latestMedian}/ft²` : fmtShortDollar(latestMedian)}
+                  {metric === 'ppsf' ? (
+                    <AnimatedNumber value={latestMedian} format="currency" suffix="/ft²" />
+                  ) : (
+                    <AnimatedNumber value={latestMedian} format="shortDollar" />
+                  )}
                 </strong>
               </span>
             )}
@@ -285,17 +297,15 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                 <strong
                   style={{ color: changePct >= 0 ? 'var(--g-green-600)' : 'var(--g-red-600)' }}
                 >
-                  {changePct >= 0 ? `+${changePct}%` : `${changePct}%`}
+                  <AnimatedNumber value={changePct} format="signedPct" />
                 </strong>
                 {usNationalChangePct !== null && (
                   <span style={{ color: 'var(--ink-2)' }}>
                     {' '}
                     vs.{' '}
                     <strong style={{ color: 'var(--ink)' }}>
-                      {usNationalChangePct >= 0
-                        ? `+${usNationalChangePct}%`
-                        : `${usNationalChangePct}%`}{' '}
-                      U.S. national real estate avg
+                      <AnimatedNumber value={usNationalChangePct} format="signedPct" /> U.S.
+                      national real estate avg
                     </strong>{' '}
                     ({earliestYear}–{latestYear} Case-Shiller)
                   </span>
@@ -514,11 +524,13 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
             {/* U.S. National Average Benchmark Trajectory */}
             {nationalCurvePoints.length > 1 && (
               <path
+                key={`nat-${span}-${metric}-${area}-${String(belowSC)}`}
                 d={nationalPath}
+                pathLength={1}
+                className="chart-draw-path"
                 fill="none"
                 stroke="#80868b"
                 strokeWidth={2}
-                strokeDasharray="5 4"
                 opacity={0.85}
               />
             )}
@@ -550,7 +562,7 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                     fillOpacity={isPinned || isHov ? 1 : 0.68}
                     stroke="#ffffff"
                     strokeWidth={1.4}
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: 'pointer', transition: 'r 160ms ease, fill 160ms ease' }}
                     onMouseEnter={() => {
                       if (!pinnedSale) setHoveredId(s.id);
                     }}
@@ -569,9 +581,14 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
 
             {/* Bellport Annual Median Trend Line — Crisp Green (Rising) or Red (Falling) on top of dots with white halo! */}
             {yearlyMedians.length > 1 && (
-              <g pointerEvents="none">
+              <g
+                key={`med-${span}-${metric}-${area}-${String(belowSC)}`}
+                pointerEvents="none"
+              >
                 <path
                   d={linePath}
+                  pathLength={1}
+                  className="chart-draw-path"
                   fill="none"
                   stroke="#ffffff"
                   strokeWidth={5.2}
@@ -581,6 +598,8 @@ export const SalesOverTimeModule: React.FC<SalesOverTimeModuleProps> = ({
                 />
                 <path
                   d={linePath}
+                  pathLength={1}
+                  className="chart-draw-path"
                   fill="none"
                   stroke={(changePct ?? 0) < 0 ? '#d93025' : '#188038'}
                   strokeWidth={3.1}

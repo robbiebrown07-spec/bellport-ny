@@ -26,6 +26,7 @@ import { HighlightedText } from './HighlightedText';
 import { ValuationBadge } from './ValuationBadge';
 import { RobbieFitBadge } from './RobbieFitBadge';
 import { SkimmablePropertyNotes } from './SkimmablePropertyNotes';
+import { AnimatedNumber } from './AnimatedNumber';
 import { getVillageDistances } from '../lib/unifiedCatalog';
 
 export interface ParcelOwnerMeta {
@@ -330,13 +331,22 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                     : 'Asking Price'}
               </div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
-                ${listing.price.toLocaleString()}
+                <AnimatedNumber value={listing.price} format="currency" animateOnView={false} />
               </strong>
             </div>
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Price / Sq Ft</div>
               <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 18 }}>
-                {ppsf > 0 ? `$${ppsf}/ft²` : '—'}
+                {ppsf > 0 ? (
+                  <AnimatedNumber
+                    value={ppsf}
+                    format="currency"
+                    suffix="/ft²"
+                    animateOnView={false}
+                  />
+                ) : (
+                  '—'
+                )}
               </strong>
             </div>
             <div>
@@ -348,7 +358,13 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                   color: beauty.score10 >= 8.5 ? 'var(--accent)' : 'var(--ink)',
                 }}
               >
-                {beauty.display}
+                <AnimatedNumber
+                  value={beauty.score10}
+                  format="decimal"
+                  decimals={1}
+                  suffix="/10"
+                  animateOnView={false}
+                />
               </strong>
               <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 1 }}>
                 {beauty.tierLabel}
@@ -363,13 +379,23 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Interior Space</div>
               <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 16 }}>
-                {listing.sqft > 0 ? `${listing.sqft.toLocaleString()} sq ft` : '—'}
+                {listing.sqft > 0 ? (
+                  <AnimatedNumber value={listing.sqft} suffix=" sq ft" animateOnView={false} />
+                ) : (
+                  '—'
+                )}
               </strong>
             </div>
             <div>
               <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Lot Size</div>
               <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 16 }}>
-                {listing.lotAcres} acres
+                <AnimatedNumber
+                  value={listing.lotAcres}
+                  format="decimal"
+                  decimals={2}
+                  suffix=" acres"
+                  animateOnView={false}
+                />
               </strong>
             </div>
             {(() => {
@@ -395,7 +421,11 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                   <div>
                     <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>Est. Fair Value</div>
                     <strong className="priv-val" style={{ fontFamily: 'var(--font-mono)', fontSize: 15 }}>
-                      ${deal.estimatedFairPrice.toLocaleString()}
+                      <AnimatedNumber
+                        value={deal.estimatedFairPrice}
+                        format="currency"
+                        animateOnView={false}
+                      />
                     </strong>
                   </div>
                 </>
@@ -403,7 +433,7 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
             })()}
           </div>
 
-          {/* Architectural Beauty Rationale Callout */}
+          {/* Architectural Beauty Rationale Callout + Animated Score Meter */}
           <div
             style={{
               padding: '10px 14px',
@@ -413,17 +443,25 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
               fontSize: 12.5,
               color: 'var(--ink-2)',
               display: 'flex',
-              alignItems: 'center',
-              gap: 8,
+              flexDirection: 'column',
+              gap: 4,
             }}
           >
-            <Sparkles size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
-            <span>
-              <strong style={{ color: 'var(--ink)' }}>
-                Architectural Beauty {beauty.display}:
-              </strong>{' '}
-              {beauty.rationale}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+              <span>
+                <strong style={{ color: 'var(--ink)' }}>
+                  Architectural Beauty {beauty.display}:
+                </strong>{' '}
+                {beauty.rationale}
+              </span>
+            </div>
+            <div className="beauty-meter" aria-hidden="true">
+              <div
+                className="beauty-meter__fill"
+                style={{ width: `${Math.min(100, Math.max(8, beauty.score10 * 10))}%` }}
+              />
+            </div>
           </div>
 
           {/* Valuation & Owner Residency / Airbnb Cards */}
