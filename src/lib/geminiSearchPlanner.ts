@@ -58,17 +58,26 @@ export async function planGeminiPropertySearch(params: {
   const cached = planCache.get(cacheKey);
   if (cached) return cached;
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: key });
-    const resp = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Translate this Bellport Village, NY natural-language home search into exact structured filter criteria.
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+    'gemini-2.5-flash-lite',
+  ];
+
+  const ai = new GoogleGenAI({ apiKey: key });
+  let rawJson = '';
+  for (const modelId of models) {
+    try {
+      const resp = await ai.models.generateContent({
+        model: modelId,
+        contents: `Translate this Bellport Village, NY natural-language home search into exact structured filter criteria.
 Active Village listings reference (for optional recommendedParcelIds if specific active homes are an especially strong semantic match):
 ${params.activeListingsDigest}
 
 User search query: "${q}"`,
-      config: {
-        systemInstruction: `You are the semantic search interpreter for Bellport Watch (all 1,058 residential homes in Incorporated Bellport Village, NY).
+        config: {
+          systemInstruction: `You are the semantic search interpreter for Bellport Watch (all 1,058 residential homes in Incorporated Bellport Village, NY).
 Convert nuanced natural-language property searches into accurate structured filters:
 - Only populate constraints implied by the user's query (leave unspecified numbers as 0 and unspecified strings as "").
 - Valid feats values ONLY: "pool", "space_pool", "lawn", "waterfront", "shingles", "arch", "second_floor", "basement", "fireplace", "addl_struct".
@@ -76,69 +85,75 @@ Convert nuanced natural-language property searches into accurate structured filt
 - "excludeFloodZone" = true if user says low flood risk, not in flood zone, avoid flood insurance.
 - "excludeUglyArch" = true if user says charming, classic, timeless, not a ranch/split-level/tract box.
 - Keep aiChips to 2–4 short human-readable tags summarizing your semantic interpretation, and aiNote to 1 concise sentence (≤22 words).`,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            statusIntent: {
-              type: Type.STRING,
-              description: '"" | "for_sale" | "past_sales" | "all_homes"',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              statusIntent: {
+                type: Type.STRING,
+                description: '"" | "for_sale" | "past_sales" | "all_homes"',
+              },
+              soldExactYears: {
+                type: Type.ARRAY,
+                items: { type: Type.INTEGER },
+              },
+              minPrice: { type: Type.NUMBER },
+              maxPrice: { type: Type.NUMBER },
+              minBeds: { type: Type.NUMBER },
+              maxBeds: { type: Type.NUMBER },
+              minBaths: { type: Type.NUMBER },
+              minSqft: { type: Type.NUMBER },
+              minLot: { type: Type.NUMBER },
+              maxWalkMin: { type: Type.NUMBER },
+              maxWalkStoresMin: { type: Type.NUMBER },
+              belowSC: { type: Type.BOOLEAN },
+              northOfSC: { type: Type.BOOLEAN },
+              excludeFloodZone: { type: Type.BOOLEAN },
+              excludePool: { type: Type.BOOLEAN },
+              excludeOverpriced: { type: Type.BOOLEAN },
+              excludeUglyArch: { type: Type.BOOLEAN },
+              poolMode: {
+                type: Type.STRING,
+                description: '"" | "pool_only" | "pool_or_room" | "room_only"',
+              },
+              feats: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
+              streetMentions: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
+              robbieFit: {
+                type: Type.STRING,
+                description: '"" | "perfect" | "great_plus" | "good_plus"',
+              },
+              valuation: {
+                type: Type.STRING,
+                description: '"" | "underpriced" | "overpriced"',
+              },
+              recommendedParcelIds: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
+              aiChips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
+              aiNote: { type: Type.STRING },
             },
-            soldExactYears: {
-              type: Type.ARRAY,
-              items: { type: Type.INTEGER },
-            },
-            minPrice: { type: Type.NUMBER },
-            maxPrice: { type: Type.NUMBER },
-            minBeds: { type: Type.NUMBER },
-            maxBeds: { type: Type.NUMBER },
-            minBaths: { type: Type.NUMBER },
-            minSqft: { type: Type.NUMBER },
-            minLot: { type: Type.NUMBER },
-            maxWalkMin: { type: Type.NUMBER },
-            maxWalkStoresMin: { type: Type.NUMBER },
-            belowSC: { type: Type.BOOLEAN },
-            northOfSC: { type: Type.BOOLEAN },
-            excludeFloodZone: { type: Type.BOOLEAN },
-            excludePool: { type: Type.BOOLEAN },
-            excludeOverpriced: { type: Type.BOOLEAN },
-            excludeUglyArch: { type: Type.BOOLEAN },
-            poolMode: {
-              type: Type.STRING,
-              description: '"" | "pool_only" | "pool_or_room" | "room_only"',
-            },
-            feats: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            streetMentions: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            robbieFit: {
-              type: Type.STRING,
-              description: '"" | "perfect" | "great_plus" | "good_plus"',
-            },
-            valuation: {
-              type: Type.STRING,
-              description: '"" | "underpriced" | "overpriced"',
-            },
-            recommendedParcelIds: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            aiChips: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            aiNote: { type: Type.STRING },
+            required: ['aiChips', 'aiNote'],
           },
-          required: ['aiChips', 'aiNote'],
         },
-      },
-    });
+      });
+      rawJson = (resp.text ?? '').trim();
+      if (rawJson) break;
+    } catch {
+      // Try next active Flash model
+    }
+  }
 
-    const rawJson = (resp.text ?? '').trim();
+  try {
     if (!rawJson) return null;
     const d = JSON.parse(rawJson) as Record<string, unknown>;
 

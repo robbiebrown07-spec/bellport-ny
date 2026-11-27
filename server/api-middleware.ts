@@ -278,8 +278,10 @@ export async function handleApiRequest(
       const sysPrompt = `You are Bellport Watch’s Senior Real Estate, Architecture & Local Advisor helping Robbie evaluate a family vacation home strictly inside Incorporated Bellport Village, NY (ZIP 11713, Town of Brookhaven, Suffolk County). Use Google Search and your deep domain expertise to answer ANY complex or open-ended question — even when it is NOT in the local parcel/sales database (taxes, ARB/historic district rules, pool/renovation costs, septic, flood insurance, commute, Ho-Hum ferry, clubs, comparisons) — while citing real Bellport Village homes/comps from the snapshot whenever helpful. Never mention "Flood Zone X".`;
 
       const attempts: Array<{ model: string; useSearch: boolean }> = [
-        { model: 'gemini-2.5-flash', useSearch: true },
-        { model: 'gemini-2.5-flash', useSearch: false },
+        { model: 'gemini-3.8-flash', useSearch: true },
+        { model: 'gemini-3.8-flash', useSearch: false },
+        { model: 'gemini-flash-latest', useSearch: false },
+        { model: 'gemini-3.5-flash-lite', useSearch: false },
       ];
       for (const att of attempts) {
         try {

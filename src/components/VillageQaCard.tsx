@@ -256,10 +256,10 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
   const badgeLabel =
     primaryResult?.status === 'ok'
       ? primaryResult.usedWebSearch
-        ? 'Gemini 2.5 Flash · Live Web + Bellport Context'
-        : 'Gemini 2.5 Flash · Bellport Advisor'
+        ? 'Gemini 3.8 Flash · Live Web + Bellport Context'
+        : 'Gemini 3.8 Flash · Bellport Advisor'
       : isLoadingPrimary && activeKey
-        ? 'Asking Gemini 2.5 Flash…'
+        ? 'Asking Gemini 3.8 Flash…'
         : 'Bellport Village Intelligence';
 
   return (
@@ -373,7 +373,7 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
           }}
         >
           <Loader2 size={16} style={{ color: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
-          <span>Thinking &amp; searching live sources with Gemini 2.5 Flash…</span>
+          <span>Thinking with Gemini 3.8 Flash…</span>
         </div>
       )}
 
@@ -434,9 +434,9 @@ export const VillageQaCard: React.FC<VillageQaCardProps> = ({
             </a>
           </div>
           <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.45 }}>
-            Paste your Gemini API key once to let <strong>Gemini 2.5 Flash + Google Search</strong>{' '}
-            answer complex questions not in our local database (taxes, ARB historic rules, pool &amp;
-            renovation costs, commute, comparisons). Stored privately on this device only.
+            Paste your Gemini API key once to power <strong>Gemini 3.8 Flash</strong> semantic search
+            &amp; open-ended reasoning (taxes, ARB historic rules, pool &amp; renovation costs,
+            commute, comparisons). Stored privately on this device only.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input

@@ -144,6 +144,8 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
   const qaCtx = useVillageQa();
   const [forcedQuery, setForcedQuery] = useState<string>('');
   const [immediateTrigger, setImmediateTrigger] = useState<number>(0);
+  const [quickKeyOpen, setQuickKeyOpen] = useState<boolean>(false);
+  const [quickKeyDraft, setQuickKeyDraft] = useState<string>('');
 
   const isForcedOpen = Boolean(filters.nlQuery.trim()) && forcedQuery === filters.nlQuery.trim();
   const parsedNl = useMemo(() => parseNaturalLanguageQuery(filters.nlQuery), [filters.nlQuery]);
@@ -160,6 +162,23 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
     if (!q) return;
     setForcedQuery(q);
     setImmediateTrigger((n) => n + 1);
+  };
+
+  const handleOneTapConnectKey = async () => {
+    if (!qaCtx?.onSaveGeminiKey) return;
+    try {
+      if (navigator.clipboard?.readText) {
+        const clip = (await navigator.clipboard.readText()).trim();
+        if (/^(?:AQ\.|AIza)[A-Za-z0-9_.-]{16,}$/.test(clip)) {
+          qaCtx.onSaveGeminiKey(clip);
+          setQuickKeyOpen(false);
+          return;
+        }
+      }
+    } catch {
+      // Clipboard read requires user paste gesture on iOS Safari — open inline paste input
+    }
+    setQuickKeyOpen((v) => !v);
   };
 
   // Summaries
@@ -375,6 +394,28 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                   {c}
                 </span>
               )))}
+        {qaCtx?.onSaveGeminiKey && !qaCtx.geminiApiKey && !qaAnswer && (
+          <button
+            type="button"
+            onClick={() => void handleOneTapConnectKey()}
+            style={{
+              border: '1px solid rgba(26,115,232,0.32)',
+              background: '#f3f7fe',
+              color: '#174ea6',
+              borderRadius: 999,
+              height: 26,
+              padding: '0 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 11.5,
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            <span>Paste Gemini Key</span>
+          </button>
+        )}
         {filters.nlQuery.trim() && !qaAnswer && (
           <button
             type="button"
@@ -422,6 +463,56 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
           </button>
         )}
       </div>
+
+      {quickKeyOpen && qaCtx?.onSaveGeminiKey && !qaCtx.geminiApiKey && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!quickKeyDraft.trim()) return;
+            qaCtx.onSaveGeminiKey?.(quickKeyDraft.trim());
+            setQuickKeyDraft('');
+            setQuickKeyOpen(false);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            padding: '10px 12px',
+            borderRadius: 14,
+            background: '#f6f9fe',
+            border: '1px solid rgba(26,115,232,0.3)',
+          }}
+        >
+          <input
+            type="password"
+            value={quickKeyDraft}
+            onChange={(e) => setQuickKeyDraft(e.target.value)}
+            placeholder="Long-press → Paste your Gemini API key…"
+            autoFocus
+            autoComplete="off"
+            style={{
+              flex: '1 1 200px',
+              height: 36,
+              padding: '0 12px',
+              borderRadius: 10,
+              border: '1px solid var(--line-strong)',
+              background: '#ffffff',
+              color: '#202124',
+              fontSize: 16,
+              fontFamily: 'var(--font-mono)',
+            }}
+          />
+          <button
+            type="submit"
+            className="icon-btn icon-btn--primary"
+            disabled={!quickKeyDraft.trim()}
+            style={{ height: 36, fontWeight: 600 }}
+          >
+            <span>Save &amp; Enable Gemini</span>
+          </button>
+        </form>
+      )}
 
       {!qaAnswer &&
         qaCtx?.geminiPlan &&

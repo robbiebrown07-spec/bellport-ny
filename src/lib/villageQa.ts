@@ -738,6 +738,7 @@ CORE OPERATING RULES:
    - Keep responses crisp, practical, and tailored to a discerning second-home buyer (typically 120–260 words unless a detailed breakdown is requested).`;
 
 const responseCache = new Map<string, LiveGeminiResult>();
+const keysWithoutSearchGrounding = new Set<string>();
 
 function extractWebSourcesFromCandidate(candidate: unknown): QaWebSource[] {
   if (!candidate || typeof candidate !== 'object') return [];
@@ -852,13 +853,18 @@ export async function askBellportGemini(params: {
     },
   ];
 
-  // Ordered fallback attempts:
-  // (a) gemini-2.5-flash + live Google Search grounding
-  // (b) gemini-2.5-flash standard (if key/tier restricts googleSearch tool)
-  // (c) gemini-2.5-flash-lite standard
+  // Ordered model cascade supporting newly created Google AI Studio AQ. Auth keys (Free & Paid tiers):
+  // - gemini-3.8-flash (current flagship Flash model on Free & Paid tiers)
+  // - gemini-flash-latest (rolling latest Flash alias)
+  // - gemini-3.5-flash-lite & gemini-2.5-flash-lite (high-throughput Flash-Lite fallbacks)
+  const noSearchKeySig = keyClean.slice(-8);
+  const skipSearchTool = keysWithoutSearchGrounding.has(noSearchKeySig);
+
   const attempts: Array<{ model: string; useSearch: boolean }> = [
-    { model: 'gemini-2.5-flash', useSearch: true },
-    { model: 'gemini-2.5-flash', useSearch: false },
+    ...(skipSearchTool ? [] : [{ model: 'gemini-3.8-flash', useSearch: true }]),
+    { model: 'gemini-3.8-flash', useSearch: false },
+    { model: 'gemini-flash-latest', useSearch: false },
+    { model: 'gemini-3.5-flash-lite', useSearch: false },
     { model: 'gemini-2.5-flash-lite', useSearch: false },
   ];
 
@@ -881,19 +887,22 @@ export async function askBellportGemini(params: {
           text,
           webSources,
           mentionedHomes: extractMentionedHomes(text, catalog),
-          usedWebSearch: attempt.useSearch,
+          usedWebSearch: attempt.useSearch && webSources.length > 0,
         };
         responseCache.set(cacheKey, result);
         return result;
       }
     } catch (err) {
       lastErr = err instanceof Error ? err.message : String(err);
-      // If API key itself is invalid (400 API_KEY_INVALID / 403), stop retrying immediately
-      if (/API_KEY_INVALID|invalid api key|API key not valid/i.test(lastErr)) {
+      if (attempt.useSearch) {
+        // Remember if this Free-Tier key does not include the paid Google Search grounding tool
+        keysWithoutSearchGrounding.add(noSearchKeySig);
+      }
+      if (/API_KEY_INVALID|invalid api key|API key not valid|ACCESS_TOKEN_TYPE_UNSUPPORTED/i.test(lastErr)) {
         return {
           status: 'error',
           errorMessage:
-            'That Gemini API key wasn’t accepted by Google. Double-check the key from Google AI Studio and try again.',
+            'Google did not accept that API key. Re-copy the full key from Google AI Studio (without spaces or quotes) and try again.',
         };
       }
     }
@@ -904,3 +913,4 @@ export async function askBellportGemini(params: {
     errorMessage: lastErr || 'Gemini could not complete that request right now. Please try again.',
   };
 }
+
