@@ -29,8 +29,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
   }, []);
 
   return (
-    <header className={`topbar ${scrolled ? 'is-scrolled' : ''}`}>
-      <div className="container topbar__inner">
+    <>
+      <div className="ios-top-edge-strip" aria-hidden="true" />
+      <header className={`topbar ${scrolled ? 'is-scrolled' : ''}`}>
+        <div className="container topbar__inner">
         <div className="topbar__brand-row">
           <button
             type="button"
@@ -103,7 +105,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeView, onSelectView, onOpen
             <Settings size={15} />
           </button>
         </div>
-      </div>
-    </header>
+        </div>
+      </header>
+    </>
   );
 };

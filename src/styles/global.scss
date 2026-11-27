@@ -6,11 +6,16 @@
   box-sizing: border-box;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+  background-color: #0f2537;
+}
+
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--ink);
   font-family: var(--font-text);
   font-size: var(--fs-body);
@@ -21,6 +26,7 @@ body {
 
 #root {
   min-height: 100dvh;
+  background-color: var(--bg);
   display: flex;
   flex-direction: column;
 }
@@ -106,6 +112,21 @@ mark.kw-hit {
   font-weight: 500;
 }
 
+// iOS 26+ Safari & Home Screen PWA status-bar anchor:
+// WebKit samples `background-color` (never CSS gradients) from a `position: fixed` full-width box
+// at `top: 0` to tint the status bar AND suppress its 40pt Liquid Glass top-edge progressive blur.
+.ios-top-edge-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: max(env(safe-area-inset-top, 0px), 10px);
+  background-color: #0f2537;
+  z-index: 45;
+  pointer-events: none;
+}
+
 // Sticky Two-Zone TopBar in Deep Maritime Navy (#0f2537)
 .topbar {
   position: sticky;
@@ -113,7 +134,7 @@ mark.kw-hit {
   z-index: 40;
   min-height: var(--topbar-h);
   padding-top: env(safe-area-inset-top, 0px);
-  background: linear-gradient(180deg, #112a3e 0%, #0f2537 100%);
+  background-color: #0f2537;
   color: #ffffff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 1px 8px rgba(9, 22, 34, 0.14);
@@ -1099,7 +1120,7 @@ mark.kw-hit {
   width: min(620px, 100vw);
   max-width: 100vw;
   height: 100dvh;
-  background: var(--surface);
+  background-color: var(--surface);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow-2);
   display: flex;
@@ -1107,6 +1128,9 @@ mark.kw-hit {
   overflow: hidden;
 
   @media (max-width: 640px) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
     border-left: none;
   }
 
@@ -1114,7 +1138,7 @@ mark.kw-hit {
     flex-shrink: 0;
     padding: calc(14px + env(safe-area-inset-top, 0px)) 22px 14px;
     border-bottom: 1px solid var(--line);
-    background: var(--surface);
+    background-color: var(--surface);
     display: flex;
     align-items: center;
     justify-content: space-between;
