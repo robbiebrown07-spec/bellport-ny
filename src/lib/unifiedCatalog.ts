@@ -15,6 +15,19 @@ import {
   getOwnerAndAirbnbProfile,
 } from './ownerAndAirbnb';
 import { evaluateRobbieFit } from './robbieFit';
+import { canonicalHomeReactionKey } from './userReactionsVault';
+
+function lookupReactionRecord<T>(
+  rec: Record<string, T>,
+  keys: Array<string | null | undefined>
+): T | undefined {
+  for (const k of keys) {
+    if (k && rec[k] !== undefined) {
+      return rec[k];
+    }
+  }
+  return undefined;
+}
 
 export const CURRENT_VILLAGE_YEAR = 2026;
 
@@ -355,28 +368,24 @@ export function buildUnifiedVillageCatalog(
     const fallbackLawn = Number(
       Math.max(0.04, lotAcVal - ((p.fpSqft || sqftVal * 0.62) / 43560)).toFixed(2)
     );
-    const isHidden = Boolean(
-      parcelHidden[p.id] || (linked?.id ? parcelHidden[linked.id] : false)
-    );
-    const explicitFav =
-      parcelFavorites[p.id] !== undefined
-        ? parcelFavorites[p.id]
-        : linked?.id && parcelFavorites[linked.id] !== undefined
-          ? parcelFavorites[linked.id]
-          : undefined;
+    const reactionKeys = [
+      p.id,
+      linked?.id,
+      canonicalHomeReactionKey(linked?.address),
+      canonicalHomeReactionKey(p.addr),
+    ];
+    const explicitHidden = lookupReactionRecord(parcelHidden, reactionKeys);
+    const isHidden = Boolean(explicitHidden);
+    const explicitFav = lookupReactionRecord(parcelFavorites, reactionKeys);
     const isFavorite =
       !isHidden && (explicitFav !== undefined ? Boolean(explicitFav) : Boolean(linked?.isFavorite));
 
+    const explicitNotes = lookupReactionRecord(parcelNotes, reactionKeys);
     const personalNotes =
-      parcelNotes[p.id] !== undefined
-        ? parcelNotes[p.id]
-        : linked?.id && parcelNotes[linked.id] !== undefined
-          ? parcelNotes[linked.id]
-          : (linked?.personalNotes ?? '');
+      explicitNotes !== undefined ? explicitNotes : (linked?.personalNotes ?? '');
 
     const userStatus: UserTrackStatus =
-      parcelStatuses[p.id] ??
-      (linked?.id ? parcelStatuses[linked.id] : undefined) ??
+      lookupReactionRecord(parcelStatuses, reactionKeys) ??
       linked?.userStatus ??
       'unreviewed';
 

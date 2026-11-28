@@ -154,7 +154,7 @@ export function loadServerState(): PersistedAppState {
   if (fs.existsSync(STATE_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) as PersistedAppState;
-      if (parsed && parsed.schemaVersion === SCHEMA_VERSION && Array.isArray(parsed.listings)) {
+      if (parsed && typeof parsed.schemaVersion === 'number' && Array.isArray(parsed.listings)) {
         // Hydrate new v2 seed fields (priceHistory, isFavorite, streetAlerts) if upgrading an untouched v1 sample store
         const allSample = parsed.listings.every((l) => l.isSample);
         const missingPriceHistory = parsed.listings.every((l) => !l.priceHistory);
@@ -163,6 +163,7 @@ export function loadServerState(): PersistedAppState {
 
         return {
           ...parsed,
+          schemaVersion: SCHEMA_VERSION,
           listings: upgradedListings,
           streetAlerts:
             parsed.streetAlerts && parsed.streetAlerts.length > 0

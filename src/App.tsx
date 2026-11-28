@@ -13,10 +13,18 @@ import type {
 } from './types';
 import {
   loadBootstrap,
+  mergeRemoteSeedListings,
   refreshFromRemoteSeed,
   saveState,
   saveStateSyncMirror,
 } from './lib/storage';
+import {
+  applyVaultToAppState,
+  backfillParcelAddressReactions,
+  collectHomeReactionKeys,
+  getCachedReactionsVaultSync,
+  recordUserReaction,
+} from './lib/userReactionsVault';
 import { evaluateGoodDeal } from './lib/intelligence';
 import { evaluateRobbieFit } from './lib/robbieFit';
 import { evaluateArchitecturalBeauty } from './lib/ownerAndAirbnb';
@@ -179,7 +187,17 @@ export const App: React.FC = () => {
         lastRemoteCheckRef.current = Date.now();
         void refreshFromRemoteSeed(latestStateRef.current)
           .then(({ state: refreshed, syncMeta: meta }) => {
-            setAppState(refreshed);
+            setAppState((prev) =>
+              applyVaultToAppState(
+                prev
+                  ? {
+                      ...prev,
+                      listings: mergeRemoteSeedListings(prev.listings, refreshed.listings),
+                    }
+                  : refreshed,
+                getCachedReactionsVaultSync()
+              )
+            );
             setSyncMeta(meta);
           })
           .catch(() => {});
@@ -300,6 +318,12 @@ export const App: React.FC = () => {
       },
     ];
   }, [appState?.emailAlerts]);
+
+  useEffect(() => {
+    if (parcelsBundle && appState) {
+      backfillParcelAddressReactions(parcelsBundle.parcels, appState);
+    }
+  }, [parcelsBundle, appState]);
 
   const catalog = useMemo(
     () =>
@@ -522,24 +546,43 @@ export const App: React.FC = () => {
 
     setAppState((prev) => {
       if (!prev) return prev;
+      const linked = prev.listings.find((item) => item.id === id || item.id === lid);
+      const keys = collectHomeReactionKeys({
+        parcelId: pid,
+        listingId: lid,
+        addresses: [matchedHome?.address, matchedHome?.parcelRef.addr, linked?.address],
+      });
+
       const nextSaved = { ...(prev.savedParcelIds ?? {}) };
       const nextHidden = { ...(prev.hiddenParcelIds ?? {}) };
       const nextNotes = { ...(prev.parcelNotes ?? {}) };
       const nextStatuses = { ...(prev.parcelStatuses ?? {}) };
 
       if (patch.isFavorite !== undefined) {
-        nextSaved[pid] = Boolean(patch.isFavorite);
-        if (patch.isFavorite) {
-          nextHidden[pid] = false;
-          if (lid) nextHidden[lid] = false;
+        const favVal = Boolean(patch.isFavorite);
+        for (const k of keys) {
+          nextSaved[k] = favVal;
+          if (favVal) nextHidden[k] = false;
         }
       }
       if (patch.personalNotes !== undefined) {
-        nextNotes[pid] = patch.personalNotes;
+        for (const k of keys) {
+          nextNotes[k] = patch.personalNotes;
+        }
       }
       if (patch.userStatus !== undefined) {
-        nextStatuses[pid] = patch.userStatus;
+        for (const k of keys) {
+          nextStatuses[k] = patch.userStatus;
+        }
       }
+
+      const updatedVault = recordUserReaction({
+        keys,
+        isFavorite: patch.isFavorite !== undefined ? Boolean(patch.isFavorite) : undefined,
+        isHidden: patch.isFavorite ? false : undefined,
+        personalNotes: patch.personalNotes,
+        userStatus: patch.userStatus,
+      });
 
       return {
         ...prev,
@@ -547,6 +590,7 @@ export const App: React.FC = () => {
         hiddenParcelIds: nextHidden,
         parcelNotes: nextNotes,
         parcelStatuses: nextStatuses,
+        reactionsVault: updatedVault,
         listings: prev.listings.map((item) =>
           item.id === id || item.id === lid ? { ...item, ...patch } : item
         ),
@@ -555,25 +599,49 @@ export const App: React.FC = () => {
   };
 
   const toggleHomeFavorite = (parcelId: string, listingId: string | null) => {
+    const matchedHome = catalog.find(
+      (h) =>
+        h.parcelId === parcelId ||
+        (listingId ? h.listingId === listingId || h.uid === listingId : false)
+    );
     setAppState((prev) => {
       if (!prev) return prev;
       const linked = listingId ? prev.listings.find((item) => item.id === listingId) : undefined;
-      const curFav =
-        (prev.savedParcelIds ?? {})[parcelId] !== undefined
-          ? Boolean((prev.savedParcelIds ?? {})[parcelId])
-          : Boolean(linked?.isFavorite);
+      const keys = collectHomeReactionKeys({
+        parcelId,
+        listingId,
+        addresses: [matchedHome?.address, matchedHome?.parcelRef.addr, linked?.address],
+      });
+
+      const savedMap = prev.savedParcelIds ?? {};
+      let resolvedSaved: boolean | undefined;
+      for (const k of keys) {
+        if (savedMap[k] !== undefined) {
+          resolvedSaved = savedMap[k];
+          break;
+        }
+      }
+      const curFav = resolvedSaved !== undefined ? Boolean(resolvedSaved) : Boolean(linked?.isFavorite);
       const nextFav = !curFav;
 
-      const nextHidden = { ...(prev.hiddenParcelIds ?? {}), [parcelId]: false };
-      if (listingId) nextHidden[listingId] = false;
+      const nextHidden = { ...(prev.hiddenParcelIds ?? {}) };
+      const nextSaved = { ...savedMap };
+      for (const k of keys) {
+        nextSaved[k] = nextFav;
+        nextHidden[k] = false;
+      }
+
+      const updatedVault = recordUserReaction({
+        keys,
+        isFavorite: nextFav,
+        isHidden: false,
+      });
 
       return {
         ...prev,
         hiddenParcelIds: nextHidden,
-        savedParcelIds: {
-          ...(prev.savedParcelIds ?? {}),
-          [parcelId]: nextFav,
-        },
+        savedParcelIds: nextSaved,
+        reactionsVault: updatedVault,
         listings: listingId
           ? prev.listings.map((item) =>
               item.id === listingId ? { ...item, isFavorite: nextFav } : item
@@ -584,26 +652,47 @@ export const App: React.FC = () => {
   };
 
   const toggleHomeHidden = (parcelId: string, listingId: string | null) => {
+    const matchedHome = catalog.find(
+      (h) =>
+        h.parcelId === parcelId ||
+        (listingId ? h.listingId === listingId || h.uid === listingId : false)
+    );
     setAppState((prev) => {
       if (!prev) return prev;
-      const curHidden = Boolean(
-        (prev.hiddenParcelIds ?? {})[parcelId] ||
-          (listingId ? (prev.hiddenParcelIds ?? {})[listingId] : false)
-      );
-      const nextVal = !curHidden;
-      const nextHidden: Record<string, boolean> = {
-        ...(prev.hiddenParcelIds ?? {}),
-        [parcelId]: nextVal,
-      };
-      if (listingId) nextHidden[listingId] = nextVal;
+      const linked = listingId ? prev.listings.find((item) => item.id === listingId) : undefined;
+      const keys = collectHomeReactionKeys({
+        parcelId,
+        listingId,
+        addresses: [matchedHome?.address, matchedHome?.parcelRef.addr, linked?.address],
+      });
 
+      const hiddenMap = prev.hiddenParcelIds ?? {};
+      let curHidden = false;
+      for (const k of keys) {
+        if (hiddenMap[k] !== undefined) {
+          curHidden = Boolean(hiddenMap[k]);
+          break;
+        }
+      }
+      const nextVal = !curHidden;
+      const nextHidden: Record<string, boolean> = { ...hiddenMap };
       const nextSaved = { ...(prev.savedParcelIds ?? {}) };
-      if (nextVal) nextSaved[parcelId] = false;
+      for (const k of keys) {
+        nextHidden[k] = nextVal;
+        if (nextVal) nextSaved[k] = false;
+      }
+
+      const updatedVault = recordUserReaction({
+        keys,
+        isHidden: nextVal,
+        isFavorite: nextVal ? false : undefined,
+      });
 
       return {
         ...prev,
         hiddenParcelIds: nextHidden,
         savedParcelIds: nextSaved,
+        reactionsVault: updatedVault,
         listings:
           nextVal && listingId
             ? prev.listings.map((item) =>
@@ -1349,7 +1438,18 @@ export const App: React.FC = () => {
         onClose={() => setSyncOpen(false)}
         onSyncMetaChange={(meta) => setSyncMeta(meta)}
         onSyncComplete={(nextState, meta) => {
-          setAppState(nextState);
+          setAppState((prev) =>
+            applyVaultToAppState(
+              prev
+                ? {
+                    ...prev,
+                    ...nextState,
+                    listings: mergeRemoteSeedListings(prev.listings, nextState.listings),
+                  }
+                : nextState,
+              getCachedReactionsVaultSync()
+            )
+          );
           setSyncMeta(meta);
         }}
       />
@@ -1359,22 +1459,49 @@ export const App: React.FC = () => {
         state={appState}
         syncMeta={syncMeta}
         hasSampleData={hasSampleData}
+        savedHomesCount={catalog.filter((h) => h.isFavorite).length}
+        hiddenHomesCount={catalog.filter((h) => h.isHidden).length}
         onClose={() => setSettingsOpen(false)}
         onRefreshNow={async () => {
           lastRemoteCheckRef.current = Date.now();
           const { state: refreshed, syncMeta: meta } = await refreshFromRemoteSeed(appState);
-          setAppState(refreshed);
+          setAppState((prev) =>
+            applyVaultToAppState(
+              prev
+                ? {
+                    ...prev,
+                    listings: mergeRemoteSeedListings(prev.listings, refreshed.listings),
+                  }
+                : refreshed,
+              getCachedReactionsVaultSync()
+            )
+          );
           setSyncMeta(meta);
         }}
         onImportState={(next) => setAppState(next)}
         onClearSampleData={() =>
           setAppState((prev) =>
-            prev ? { ...prev, listings: prev.listings.filter((l) => !l.isSample) } : prev
+            prev
+              ? applyVaultToAppState(
+                  { ...prev, listings: prev.listings.filter((l) => !l.isSample) },
+                  getCachedReactionsVaultSync()
+                )
+              : prev
           )
         }
         onRestoreSeedData={() => {
           void refreshFromRemoteSeed(appState).then(({ state: refreshed, syncMeta: meta }) => {
-            setAppState(refreshed);
+            setAppState((prev) =>
+              applyVaultToAppState(
+                prev
+                  ? {
+                      ...prev,
+                      listings: mergeRemoteSeedListings(prev.listings, refreshed.listings),
+                    }
+                  : refreshed,
+                getCachedReactionsVaultSync()
+              )
+            );
             setSyncMeta(meta);
           });
         }}

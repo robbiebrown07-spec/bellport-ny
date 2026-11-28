@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import {
   Download,
   ExternalLink,
+  Heart,
   KeyRound,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
+  ThumbsDown,
   Trash2,
   Upload,
   X,
@@ -27,6 +30,8 @@ interface SettingsDrawerProps {
   state: PersistedAppState;
   syncMeta: SyncMetadata;
   hasSampleData: boolean;
+  savedHomesCount: number;
+  hiddenHomesCount: number;
   onClose: () => void;
   onRefreshNow: () => Promise<void>;
   onImportState: (next: PersistedAppState) => void;
@@ -41,6 +46,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   state,
   syncMeta,
   hasSampleData,
+  savedHomesCount,
+  hiddenHomesCount,
   onClose,
   onRefreshNow,
   onImportState,
@@ -263,11 +270,63 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
           </div>
 
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              background: 'var(--g-green-50)',
+              border: '1px solid rgba(30, 142, 62, 0.24)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3
+                style={{
+                  fontSize: 14.5,
+                  margin: 0,
+                  color: '#137333',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <ShieldCheck size={16} />
+                <span>Persistent Hearts &amp; Dislikes Vault</span>
+              </h3>
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: '#137333',
+                }}
+              >
+                Active
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Heart size={13} color="#d93025" fill="#d93025" />
+                <span>{savedHomesCount} Hearted</span>
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <ThumbsDown size={13} color="var(--ink-2)" />
+                <span>{hiddenHomesCount} Disliked / Passed</span>
+              </span>
+            </div>
+            <p style={{ fontSize: 12.4, color: 'var(--ink-2)', margin: 0, lineHeight: 1.45 }}>
+              Anchored by physical street address + parcel ID across 3 independent on-device stores
+              (<code>localStorage</code>, <code>IndexedDB</code>, and <code>CacheStorage</code>), so
+              every heart, pass, and note stays intact across app updates and daily listing refreshes.
+            </p>
+          </div>
+
           <div>
             <h3 style={{ fontSize: 15, marginBottom: 6 }}>1-Click Export (Own Your Data)</h3>
             <p style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 12 }}>
-              All listings, custom tags, and notes live locally in IndexedDB (`schemaVersion: 1`).
-              Export anytime as portable JSON or spreadsheet-ready CSV.
+              Export a full backup (including all hearts, dislikes, notes, and saved searches) as
+              portable JSON or spreadsheet-ready CSV anytime.
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
@@ -281,7 +340,13 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               <button
                 type="button"
                 className="icon-btn"
-                onClick={() => exportListingsAsCsv(state.listings)}
+                onClick={() =>
+                  exportListingsAsCsv(
+                    state.listings,
+                    state.savedParcelIds ?? {},
+                    state.hiddenParcelIds ?? {}
+                  )
+                }
               >
                 <Download size={15} />
                 <span>Export CSV</span>

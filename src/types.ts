@@ -342,6 +342,16 @@ export interface SyncMetadata {
   lastSyncSummary?: string;
 }
 
+export interface UserReactionsVault {
+  vaultVersion: 1;
+  updatedAt: string;
+  saved: Record<string, boolean>;
+  hidden: Record<string, boolean>;
+  notes: Record<string, string>;
+  statuses: Record<string, UserTrackStatus>;
+  timestamps: Record<string, string>;
+}
+
 export interface PersistedAppState {
   schemaVersion: typeof SCHEMA_VERSION;
   updatedAt: string;
@@ -350,6 +360,7 @@ export interface PersistedAppState {
   hiddenParcelIds?: Record<string, boolean>;
   parcelNotes?: Record<string, string>;
   parcelStatuses?: Record<string, UserTrackStatus>;
+  reactionsVault?: UserReactionsVault;
   activeFilters?: Record<string, unknown>;
   tasteFilters?: Record<string, unknown>;
   idealSearchNotes?: string;
